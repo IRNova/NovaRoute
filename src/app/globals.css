@@ -1,0 +1,851 @@
+/* source() sets scan base to src/ for both webpack + Turbopack; auto-detection still skips binaries + gitignore */
+@import "tailwindcss" source("../../");
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Hide icon ligature text until font is ready */
+.material-symbols-outlined { visibility: hidden; }
+.fonts-loaded .material-symbols-outlined { visibility: visible; }
+
+/* ============================================================
+   NovaRoute — Nova Proxy design tokens
+   ------------------------------------------------------------
+   The canon lives in irnova-site/design-system/tokens.css. This
+   file is NovaRoute's faithful expression of it.
+
+   There are three layers, and only the first holds literal values:
+
+     1. Nova canon      --cyan, --grad, --bg, --surface, --text …
+                        (tokens.css names, so the two can be diffed)
+     2. Tailwind theme  --color-* consumed as bg-surface, text-text-main …
+     3. Raw-CSS aliases --ac, --card, --bd, --tx … consumed as var()
+                        strings inside <style> tags in login/setup/
+                        DashboardHome/Sidebar
+
+   Layers 2 and 3 are DERIVED from layer 1 and must never restate a
+   literal color. That is what stops the two alias sets drifting
+   apart again.
+
+   Nova is light-first now: light is the default theme and dark is opt-in.
+   The cascade below still keys light off :root and dark off .dark,
+   because that is what Tailwind's `dark:` variant and the app's
+   existing utilities expect. "Light-first" is delivered by
+   THEME_CONFIG.defaultTheme plus the pre-paint script in layout.js.
+   ============================================================ */
+
+/* ---------- Light theme (opt-in) ---------- */
+:root {
+  /* 1. Nova canon ------------------------------------------- */
+  --cyan: #0891b2;            /* primary accent, deepened for light surfaces */
+  --violet: #9333ea;
+  --indigo: #818cf8;
+  --indigo-strong: #6366f1;
+
+  /* Signature 3-stop gradient. Identical in both themes: dark ink
+     (--on-accent) sits on the bright gradient either way. The indigo
+     midpoint is the signature — a 2-stop cyan→purple is wrong. */
+  --grad: linear-gradient(120deg, #22d3ee 0%, #818cf8 50%, #a855f7 100%);
+  /* Gradient TEXT needs deeper stops to stay legible on a light page. */
+  --grad-text: linear-gradient(120deg, #0891b2 0%, #6366f1 50%, #9333ea 100%);
+  --on-accent: #05060a;
+
+  --bg: #ffffff;
+  --bg-alt: #f4f6fb;
+  --surface: #f8f9fc;
+  --surface-2: #f0f2f7;
+  --surface-3: #e8eaf0;
+  --nav-bg: rgba(255, 255, 255, 0.8);
+  --code-bg: #0b0e16;         /* code/terminal stays dark in both themes */
+  /* Opaque surface for anything that floats over page content
+     (modals, menus, popovers). The translucent --surface would let
+     the page bleed through and destroy legibility. */
+  --elevated: #ffffff;
+
+  --border: rgba(15, 23, 42, 0.12);
+  --border-strong: rgba(15, 23, 42, 0.22);
+
+  --text: #0d1117;
+  --text-2: #33415c;          /* app extension: secondary tier */
+  /* Canon is #51607a. Deepened one step: measured at 4.46:1 on --surface,
+     just under AA, and this app puts muted text on tinted surfaces far more
+     than the marketing site does. */
+  --muted: #4b5a75;
+  --subtle: #5f6a7d;          /* app extension: metadata / disabled tier */
+  --on-pill: #0e7490;
+  /* Ink that sits ON --color-primary. Light's primary is a deep teal, so it
+     carries white; dark's primary is bright cyan, so it carries --on-accent.
+     White on the dark theme's #22d3ee is 1.26:1. */
+  --on-primary: #ffffff;
+  --accent-1: #0c6478;
+  --accent-2: #4338ca;
+  --accent-3: #7e22ce;
+
+  --success: #036148;
+  --success-strong: #065f46;
+  --warning: #b45309;
+  --info: #7c3aed;
+  --danger: #ef4444;          /* fills */
+  --danger-strong: #dc2626;   /* danger fill under white text (AA at 4.8:1) */
+  /* #dc2626 measured 3.59:1 as text on a danger-tinted surface; deepened. */
+  --danger-text: #b91c1c;     /* danger as text on the page background */
+  --star: #b45309;
+
+  --radius: 16px;
+  --radius-pill: 999px;
+  --maxw: 1140px;
+
+  --shadow-accent: 0 10px 30px -10px rgba(99, 102, 241, 0.7);
+  --shadow-pop: 0 14px 30px rgba(15, 23, 42, 0.10);
+
+  /* 2. Tailwind semantic theme (derived) -------------------- */
+  --color-brand-50: #ecfeff;
+  --color-brand-100: #cffafe;
+  --color-brand-200: #a5f3fc;
+  --color-brand-300: #67e8f9;
+  --color-brand-400: #22d3ee;
+  --color-brand-500: var(--cyan);
+  --color-brand-600: #0e7490;
+  --color-brand-700: var(--indigo-strong);
+  --color-brand-800: var(--violet);
+  --color-brand-900: #6b21a8;
+
+  /* --cyan stays at the canon #0891b2 for fills, borders and gradient stops.
+     --color-primary is this app's TEXT/icon accent role, and #0891b2 measures
+     3.25:1 on --surface, under AA. It takes the canon's own on-light accent
+     value instead. */
+  --color-primary: #0c6478;
+  --color-primary-hover: #0a5364;
+  --color-on-primary: var(--on-primary);
+
+  --color-bg: var(--bg);
+  --color-bg-alt: var(--bg-alt);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-elevated: var(--elevated);
+  --color-sidebar: var(--nav-bg);
+
+  --color-border: var(--border);
+  --color-border-subtle: color-mix(in srgb, var(--border) 55%, transparent);
+
+  --color-text: var(--text);
+  --color-text-main: var(--text);
+  --color-text-2: var(--text-2);
+  --color-text-muted: var(--muted);
+  --color-text-subtle: var(--subtle);
+
+  --color-danger: var(--danger-text);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+
+  --radius-brand: 10px;       /* canon --radius-sm: inputs, chips, buttons */
+  --radius-brand-lg: var(--radius);
+  --radius-brand-pill: var(--radius-pill);
+
+  --shadow-soft: 0 1px 2px 0 rgba(15, 23, 42, 0.05);
+  --shadow-warm: 0 2px 12px -2px color-mix(in srgb, var(--cyan) 20%, transparent);
+  --shadow-elevated: var(--shadow-pop);
+  --shadow-elev:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.8),
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 12px 36px -8px rgba(15, 23, 42, 0.12);
+  --shadow-focus: 0 0 0 3px color-mix(in srgb, var(--cyan) 24%, transparent);
+
+  /* 3. Raw-CSS aliases (derived) ---------------------------- */
+  --ac: var(--color-primary);
+  --ac2: var(--violet);
+  --ring: color-mix(in srgb, var(--cyan) 24%, transparent);
+  --card: var(--surface);
+  --c2: var(--bg-alt);
+  --bd: var(--border);
+  --bd2: var(--border-strong);
+  --tx: var(--text);
+  --tx2: var(--text-2);
+  --mu: var(--muted);
+  --dg: var(--danger-text);
+  --ok: var(--success);
+  --shadow: var(--shadow-pop);
+
+  color-scheme: light;
+}
+
+/* ---------- Dark theme (the Nova default) ---------- */
+.dark {
+  --cyan: #22d3ee;
+  --violet: #a855f7;
+  --indigo: #818cf8;
+  --indigo-strong: #6366f1;
+
+  --grad: linear-gradient(120deg, #22d3ee 0%, #818cf8 50%, #a855f7 100%);
+  --grad-text: var(--grad);
+  --on-accent: #05060a;
+
+  --bg: #05060a;
+  --bg-alt: #090b12;
+  /* Translucent white overlays over --bg, not opaque greys. This is
+     what gives Nova its glassy depth. */
+  --surface: rgba(255, 255, 255, 0.04);
+  --surface-2: rgba(255, 255, 255, 0.06);
+  --surface-3: rgba(255, 255, 255, 0.09);
+  --nav-bg: rgba(5, 6, 10, 0.7);
+  --code-bg: #0b0e16;
+  --elevated: #0f1219;
+
+  --border: rgba(255, 255, 255, 0.09);
+  --border-strong: rgba(255, 255, 255, 0.16);
+
+  --text: #eef1f7;
+  --text-2: #c5cdda;
+  --muted: #9aa4b8;
+  --subtle: #7d8798;
+  --on-pill: #cfe8ff;
+  --on-primary: var(--on-accent);
+  --accent-1: var(--cyan);
+  --accent-2: #a5b4fc;
+  --accent-3: #d8b4fe;
+
+  --success: #7ee0b8;
+  --success-strong: #047857;
+  --warning: #f59e0b;
+  --info: #a855f7;
+  --danger: #ef4444;
+  --danger-strong: #dc2626;
+  --danger-text: #f87171;
+  --star: #ffd479;
+
+  --shadow-accent: 0 10px 30px -10px rgba(99, 102, 241, 0.7);
+  --shadow-pop: 0 14px 30px rgba(0, 0, 0, 0.35);
+
+  /* Only the ramp steps that genuinely differ are restated; 500/700/800
+     already derive from --cyan / --indigo-strong / --violet above. */
+  --color-brand-50: #04283a;
+  --color-brand-100: #06384d;
+  --color-brand-200: #0a4c68;
+  --color-brand-300: #67e8f9;
+  --color-brand-400: #67e8f9;
+  --color-brand-600: #0e7490;
+  --color-brand-700: var(--indigo);
+  --color-brand-900: #7c3aed;
+
+  --color-primary: var(--cyan);
+  --color-primary-hover: #67e8f9;
+  --ac: var(--cyan);
+
+  --shadow-soft: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --shadow-warm: 0 2px 12px -2px color-mix(in srgb, var(--cyan) 25%, transparent);
+  --shadow-elevated: var(--shadow-pop);
+  /* Depth shadows do not read on dark — collapse to a ring. */
+  --shadow-elev:
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 16px 48px -8px rgba(0, 0, 0, 0.55);
+  --shadow-focus: 0 0 0 3px color-mix(in srgb, var(--cyan) 28%, transparent);
+
+  color-scheme: dark;
+}
+
+/* ============================================================
+   Fix native select dropdowns in dark mode
+   ============================================================ */
+select {
+  color-scheme: light;
+}
+
+.dark select {
+  color-scheme: dark;
+}
+
+.dark select option {
+  background-color: var(--color-surface);
+  color: var(--color-text-main);
+}
+
+@theme inline {
+  /* Brand scale */
+  --color-brand-50: var(--color-brand-50);
+  --color-brand-100: var(--color-brand-100);
+  --color-brand-200: var(--color-brand-200);
+  --color-brand-300: var(--color-brand-300);
+  --color-brand-400: var(--color-brand-400);
+  --color-brand-500: var(--color-brand-500);
+  --color-brand-600: var(--color-brand-600);
+  --color-brand-700: var(--color-brand-700);
+  --color-brand-800: var(--color-brand-800);
+  --color-brand-900: var(--color-brand-900);
+
+  /* Primary aliases */
+  --color-primary: var(--color-primary);
+  --color-primary-hover: var(--color-primary-hover);
+
+  /* Semantic */
+  --color-bg: var(--color-bg);
+  --color-bg-alt: var(--color-bg-alt);
+  --color-surface: var(--color-surface);
+  --color-surface-2: var(--color-surface-2);
+  --color-surface-3: var(--color-surface-3);
+  --color-elevated: var(--color-elevated);
+  --color-on-primary: var(--color-on-primary);
+  --color-sidebar: var(--color-sidebar);
+  --color-border: var(--color-border);
+  --color-border-subtle: var(--color-border-subtle);
+  --color-text: var(--color-text);
+  --color-text-main: var(--color-text-main);
+  --color-text-2: var(--color-text-2);
+  --color-text-muted: var(--color-text-muted);
+  --color-text-subtle: var(--color-text-subtle);
+  --color-accent: var(--color-brand-500);
+  --color-danger: var(--color-danger);
+  --color-success: var(--color-success);
+  --color-warning: var(--color-warning);
+  --color-info: var(--color-info);
+
+  /* Radius */
+  --radius-brand: var(--radius-brand);
+  --radius-brand-lg: var(--radius-brand-lg);
+  --radius-brand-pill: var(--radius-brand-pill);
+
+  /* Shadows */
+  --shadow-soft: var(--shadow-soft);
+  --shadow-warm: var(--shadow-warm);
+  --shadow-elevated: var(--shadow-elevated);
+  --shadow-elev: var(--shadow-elev);
+  --shadow-focus: var(--shadow-focus);
+
+  /* Font - Vazirmatn primary (Persian-first), Inter latin fallback */
+  --font-sans: var(--font-vazir), 'Vazirmatn', var(--font-inter), 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', system-ui, Tahoma, sans-serif;
+}
+
+/* Base */
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text-main);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Kill orphans and ragged headline breaks. */
+h1, h2, h3, h4 { text-wrap: balance; }
+p, li, figcaption { text-wrap: pretty; }
+
+/* ------------------------------------------------------------
+   Bidi: keep English copy readable inside the RTL shell.
+
+   Most strings in this app are authored in English and only some are
+   translated at runtime, so an RTL page is full of fully-English
+   sentences. Left alone, bidi resolution attaches their sentence-final
+   period to the RTL paragraph and flips it to the front:
+
+     ".Manage upstream AI providers and connections"
+
+   `unicode-bidi: plaintext` is the CSS equivalent of dir="auto": it
+   resolves each element's paragraph direction from its own first strong
+   character. English blocks order LTR, Farsi blocks stay RTL, and mixed
+   copy keeps standard bidi behaviour.
+
+   Scoped to RTL documents so LTR locales are untouched. For strings
+   COMPOSED at runtime from mixed-direction parts, use the LRI/PDI
+   helpers in src/shared/utils/bidi.js instead — CSS cannot isolate a
+   run that lives inside a single text node.
+   ------------------------------------------------------------ */
+[dir="rtl"] :where(
+  p, li, dd, dt, blockquote, figcaption,
+  h1, h2, h3, h4, h5, h6,
+  td, th, caption,
+  label, legend, summary, option,
+  button, .bidi-auto
+) {
+  unicode-bidi: plaintext;
+}
+
+/* Values that are always LTR no matter the surrounding copy. */
+.ltr-value {
+  direction: ltr;
+  unicode-bidi: isolate;
+  text-align: start;
+}
+
+/* Any element carrying a runtime-changing number should not jitter. */
+.tabular { font-variant-numeric: tabular-nums; }
+
+/* Visible focus for keyboard users on every interactive element. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+  border-radius: var(--radius-brand);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Selection - brand-tinted */
+::selection {
+  background-color: color-mix(in srgb, var(--cyan) 22%, transparent);
+  color: var(--text);
+}
+
+/* iOS keyboard accent */
+input, textarea {
+  accent-color: var(--color-primary);
+}
+
+/* Scrollbar (custom-scrollbar utility kept for compat) */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgba(156, 163, 175, 0.3);
+  border-radius: 20px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-primary);
+}
+
+/* Thin horizontal scrollbar - brand colored */
+.scroll-thin-x {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--cyan) 55%, transparent) transparent;
+}
+.scroll-thin-x::-webkit-scrollbar { height: 3px; }
+.scroll-thin-x::-webkit-scrollbar-track { background: transparent; }
+.scroll-thin-x::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--cyan) 55%, transparent);
+  border-radius: 3px;
+}
+
+/* Global thin mac-like scrollbars (overrides clunky Windows/Linux default) */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120, 120, 120, 0.35) transparent;
+}
+.dark * {
+  scrollbar-color: rgba(180, 180, 180, 0.3) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: rgba(120, 120, 120, 0.35);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(120, 120, 120, 0.55);
+}
+.dark *::-webkit-scrollbar-thumb {
+  background-color: rgba(180, 180, 180, 0.3);
+}
+.dark *::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(180, 180, 180, 0.5);
+}
+
+/* Reusable elevated card */
+.card-soft {
+  background-color: var(--color-surface);
+  box-shadow: var(--shadow-soft);
+  border-radius: var(--radius-brand-lg);
+}
+.card-elev {
+  background-color: var(--color-surface);
+  box-shadow: var(--shadow-elev);
+  border-radius: var(--radius-brand-lg);
+}
+
+/* Hero gradient (compat) */
+.bg-hero-gradient {
+  background: linear-gradient(180deg, var(--color-bg-alt) 0%, var(--color-bg) 100%);
+}
+
+/* macOS Vibrancy */
+.bg-vibrancy {
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  background: var(--nav-bg);
+}
+
+/* macOS Traffic Lights */
+.traffic-lights {
+  display: flex;
+  gap: 8px;
+}
+.traffic-light {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+.traffic-light.red { background: #FF5F56; }
+.traffic-light.yellow { background: #FFBD2E; }
+.traffic-light.green { background: #27C93F; }
+
+/* Material Symbols */
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined', sans-serif;
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  font-feature-settings: 'liga';
+  -webkit-font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+.material-symbols-outlined.fill-1 {
+  font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+/* Disable text selection on buttons */
+button {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Tailwind v4 dropped default button cursor — restore globally */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+label[for],
+summary,
+select {
+  cursor: pointer;
+}
+
+button:disabled,
+[role="button"][aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+/* ============================================================
+   Animations
+   ============================================================ */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.animate-spin { animation: spin 1s linear infinite; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.animate-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-3px); }
+  20%, 40%, 60%, 80% { transform: translateX(3px); }
+}
+.animate-shake { animation: shake 0.6s ease-in-out; }
+
+@keyframes border-glow {
+  0%, 100% {
+    box-shadow:
+      0 0 5px color-mix(in srgb, var(--cyan) 30%, transparent),
+      0 0 10px color-mix(in srgb, var(--violet) 20%, transparent);
+    border-color: color-mix(in srgb, var(--cyan) 50%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 10px color-mix(in srgb, var(--cyan) 50%, transparent),
+      0 0 20px color-mix(in srgb, var(--violet) 30%, transparent);
+    border-color: color-mix(in srgb, var(--cyan) 80%, transparent);
+  }
+}
+.animate-border-glow { animation: border-glow 2s ease-in-out infinite; }
+
+@keyframes slideInFromRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slideInFromTop {
+  from { transform: translateY(-10px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.slide-in-right { animation: slideInFromRight 0.25s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+.fade-in { animation: fadeIn 0.2s ease-out forwards; }
+.slide-in-top { animation: slideInFromTop 0.18s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+
+@keyframes pulseGlow {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50% { opacity: 0.7; transform: scale(1.05); }
+}
+.animate-pulse-glow { animation: pulseGlow 3s ease-in-out infinite; }
+
+/* CTA shimmer + glow pulse */
+@keyframes ctaShimmer {
+  0% { transform: translateX(-120%) skewX(-20deg); }
+  100% { transform: translateX(220%) skewX(-20deg); }
+}
+@keyframes ctaGlowPulse {
+  0%, 100% {
+    box-shadow:
+      0 8px 24px -8px color-mix(in srgb, var(--indigo-strong) 45%, transparent),
+      0 0 0 0 color-mix(in srgb, var(--cyan) 50%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 12px 32px -8px color-mix(in srgb, var(--indigo-strong) 60%, transparent),
+      0 0 0 8px transparent;
+  }
+}
+.btn-cta {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  animation: ctaGlowPulse 2.4s ease-in-out infinite;
+}
+.btn-cta::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.35), transparent);
+  animation: ctaShimmer 2.8s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 1;
+}
+.btn-cta > * { position: relative; z-index: 2; }
+
+/* Dot Grid Background Pattern */
+.dot-grid-bg {
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(circle at 15% 20%, color-mix(in srgb, var(--cyan) 12%, transparent) 0%, transparent 40%),
+    radial-gradient(circle at 85% 80%, color-mix(in srgb, var(--violet) 8%, transparent) 0%, transparent 40%);
+}
+.dark .dot-grid-bg {
+  background-image:
+    radial-gradient(circle at 15% 20%, color-mix(in srgb, var(--cyan) 18%, transparent) 0%, transparent 40%),
+    radial-gradient(circle at 85% 80%, color-mix(in srgb, var(--violet) 10%, transparent) 0%, transparent 40%);
+}
+
+/* Landing-style faint grid overlay (use absolute pos inside relative parent) */
+.landing-grid {
+  background-image:
+    linear-gradient(to right, var(--color-accent) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--color-accent) 1px, transparent 1px);
+  background-size: 40px 40px;
+  opacity: 0.08;
+}
+.dark .landing-grid {
+  opacity: 0.04;
+}
+
+/* Topology: router card pulse (no flying rings) + electric edge beam */
+@keyframes topology-router-pulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow:
+      0 0 8px #fde047,
+      0 0 20px color-mix(in srgb, var(--color-primary) 65%, transparent),
+      0 0 32px rgba(34, 211, 238, 0.4),
+      inset 0 0 10px rgba(253, 224, 71, 0.3);
+  }
+  50% {
+    transform: scale(1.06);
+    box-shadow:
+      0 0 14px #fef08a,
+      0 0 28px #facc15,
+      0 0 44px rgba(34, 211, 238, 0.6),
+      inset 0 0 14px rgba(255, 255, 255, 0.25);
+  }
+}
+@keyframes topology-router-icon-shake {
+  0%, 100% { transform: rotate(0deg) scale(1); filter: drop-shadow(0 0 2px #fde047); }
+  25% { transform: rotate(-5deg) scale(1.08); filter: drop-shadow(0 0 6px #facc15); }
+  75% { transform: rotate(5deg) scale(1.08); filter: drop-shadow(0 0 6px #22d3ee); }
+}
+@keyframes topology-router-label-flicker {
+  0%, 100% { text-shadow: 0 0 6px #fde047, 0 0 12px #22d3ee; }
+  50% { text-shadow: 0 0 10px #fff, 0 0 18px #facc15; }
+}
+@keyframes topology-edge-dash {
+  to { stroke-dashoffset: -36; }
+}
+@keyframes topology-edge-flicker {
+  0%, 100% { opacity: 0.85; }
+  40% { opacity: 1; }
+  55% { opacity: 0.55; }
+  70% { opacity: 1; }
+}
+.topology-router-core {
+  animation: topology-router-pulse 0.75s ease-in-out infinite;
+  border-color: #fde047 !important;
+}
+.topology-router-icon {
+  animation: topology-router-icon-shake 0.45s ease-in-out infinite;
+}
+.topology-router-label {
+  animation: topology-router-label-flicker 0.7s ease-in-out infinite;
+}
+.topology-router-badge {
+  box-shadow: 0 0 10px #fde047, 0 0 16px rgba(34, 211, 238, 0.6);
+}
+.topology-edge-kame {
+  stroke-dasharray: 8 6;
+  animation: topology-edge-dash 0.22s linear infinite;
+}
+.topology-edge-halo {
+  animation: topology-edge-flicker 0.18s steps(2) infinite;
+}
+.topology-edge-plasma {
+  stroke-dasharray: 14 10;
+  animation: topology-edge-dash 0.18s linear infinite, topology-edge-flicker 0.22s steps(3) infinite;
+}
+
+/* React Flow controls: match app theme */
+.react-flow-controls-custom {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-soft);
+  overflow: hidden;
+}
+
+.react-flow-controls-custom button {
+  background: var(--color-surface);
+  color: var(--color-text-main);
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.react-flow-controls-custom button:last-child {
+  border-bottom: 0;
+}
+
+.react-flow-controls-custom button:hover {
+  background: var(--color-bg-alt);
+}
+
+/* Changelog markdown body */
+.changelog-body h1 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  margin: 1.5rem 0 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--color-border);
+}
+.changelog-body h1:first-child { margin-top: 0; }
+.changelog-body h2 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin: 1rem 0 0.5rem;
+  color: var(--color-primary);
+}
+.changelog-body h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0.75rem 0 0.4rem;
+}
+.changelog-body ul {
+  list-style: disc;
+  padding-left: 1.5rem;
+  margin: 0.5rem 0;
+}
+.changelog-body li { margin: 0.25rem 0; line-height: 1.6; }
+.changelog-body p { margin: 0.5rem 0; line-height: 1.6; }
+.changelog-body code {
+  background: var(--color-bg-alt);
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  font-size: 0.875em;
+  font-family: ui-monospace, monospace;
+}
+.changelog-body a {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+.changelog-body hr {
+  border: none;
+  border-top: 1px solid var(--color-border);
+  margin: 1.5rem 0;
+}
+
+/* ============================================================
+   Nova brand utilities (cyan → purple)
+   ============================================================ */
+/* The signature Nova gradient — brand mark, primary CTAs, accents.
+   Always the 3-stop form; the indigo midpoint is the signature. */
+.bg-nova-gradient {
+  background: var(--grad);
+  color: var(--on-accent);
+}
+.text-nova-gradient {
+  background: var(--grad-text);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Auth / login background: cyan + purple radial glows over the page bg */
+.bg-nova-auth {
+  background:
+    radial-gradient(820px 420px at 50% -6%, color-mix(in srgb, var(--color-primary) 16%, transparent), transparent 60%),
+    radial-gradient(720px 420px at 88% 8%, color-mix(in srgb, var(--color-brand-700) 14%, transparent), transparent 55%),
+    var(--color-bg);
+}
+
+/* Sidebar active item: brand gradient indicator bar (RTL-aware via logical props) */
+.nav-active-bar {
+  position: relative;
+}
+.nav-active-bar::before {
+  content: "";
+  position: absolute;
+  inset-block-start: 9px;
+  inset-block-end: 9px;
+  inset-inline-start: 0;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(180deg, var(--cyan) 0%, var(--indigo) 50%, var(--violet) 100%);
+}
+[dir="rtl"] .nav-active-bar::before {
+  border-radius: 3px 0 0 3px;
+}
+
+/* Nova primary button: the signature gradient carrying dark ink. */
+.btn-nova {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: none;
+  border-radius: var(--radius-brand);
+  background: var(--grad);
+  color: var(--on-accent);
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  box-shadow: var(--shadow-accent);
+  transition: filter 0.14s cubic-bezier(0.23, 1, 0.32, 1),
+    box-shadow 0.14s cubic-bezier(0.23, 1, 0.32, 1);
+}
+.btn-nova:hover { filter: brightness(1.06); }
+.btn-nova:active { transform: scale(0.97); }
+.btn-nova:disabled { opacity: 0.6; cursor: default; box-shadow: none; }

@@ -1,0 +1,71 @@
+export default {
+  id: "navy",
+  hasFree: true,
+  display: {
+    name: "NavyAI",
+    icon: "hub",
+    color: "#1E3A8A",
+    textIcon: "NV",
+    website: "https://api.navy",
+  },
+  category: "apikey",
+  authHint: "Create a free API key from the NavyAI dashboard, then paste it here as a Bearer token.",
+  transport: {
+    baseUrl: "https://api.navy/v1/chat/completions",
+    authType: "apikey",
+    auth: {
+      header: "Authorization",
+      scheme: "bearer",
+      combined: true,
+    },
+    modelsFetcher: {
+      url: "https://api.navy/v1/models",
+      type: "openai",
+    },
+  },
+  models: [
+    {
+      id: "llama-3.3-70b-instruct",
+      name: "Llama 3.3 70B Instruct",
+      toolCalling: true,
+      contextLength: 131072,
+    },
+    {
+      id: "gemma-4-31b-it",
+      name: "Gemma 4 31B IT",
+      toolCalling: true,
+      supportsReasoning: true,
+      supportsVision: true,
+      contextLength: 262144,
+    },
+    {
+      id: "deepseek-v4-flash",
+      name: "DeepSeek V4 Flash",
+      toolCalling: true,
+      supportsReasoning: true,
+      contextLength: 1048576,
+    },
+    {
+      id: "deepseek-chat",
+      name: "DeepSeek Chat",
+      toolCalling: true,
+      contextLength: 131072,
+    },
+    {
+      id: "mistral-small-latest",
+      name: "Mistral Small",
+      toolCalling: true,
+      supportsReasoning: true,
+      supportsVision: true,
+      contextLength: 262144,
+    },
+    {
+      id: "llama-4-scout",
+      name: "Llama 4 Scout",
+      toolCalling: true,
+      supportsVision: true,
+      contextLength: 10000000,
+    },
+  ],
+  passthroughModels: true,
+};

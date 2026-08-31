@@ -1,0 +1,45 @@
+export default {
+  id: "agnes",
+  hasFree: true,
+  display: {
+    name: "Agnes AI",
+    icon: "auto_awesome",
+    color: "#10B981",
+    textIcon: "AG",
+    website: "https://agnes-ai.com",
+  },
+  category: "apikey",
+  authHint: "Get API key at agnes-ai.com",
+  transport: {
+    baseUrl: "https://apihub.agnes-ai.com/v1/responses",
+    format: "openai-responses",
+    authType: "apikey",
+    auth: {
+      header: "Authorization",
+      scheme: "bearer",
+      combined: true,
+    },
+  },
+  models: [
+    {
+      id: "agnes-2.5-pro",
+      name: "Agnes 2.5 Pro",
+      toolCalling: true,
+      supportsReasoning: true,
+      supportsVision: true,
+      maxOutputTokens: 65536,
+      contextLength: 1048576,
+      interleavedField: "reasoning_content",
+    },
+    {
+      id: "agnes-2.5-flash",
+      name: "Agnes 2.5 Flash",
+      toolCalling: true,
+      supportsReasoning: true,
+      supportsVision: true,
+      maxOutputTokens: 65536,
+      contextLength: 524288,
+      interleavedField: "reasoning_content",
+    },
+  ],
+};
