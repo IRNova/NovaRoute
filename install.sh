@@ -44,46 +44,59 @@ node_version_ok() {
   [[ "$major" -ge "$NODE_VERSION_MIN" ]]
 }
 
-install_nodejs() {
-  log "Node.js ${NODE_VERSION_MIN}+ required. Installing..."
-  if command_exists apt-get; then
-    apt-get update -qq
-    apt-get install -y -qq curl ca-certificates gnupg
+ensure_nodejs_and_npm() {
+  # اگر Node نسخه مناسب نداشت، کامل نصب کن
+  if ! node_version_ok; then
+    log "Node.js ${NODE_VERSION_MIN}+ required. Installing..."
+    if command_exists apt-get; then
+      apt-get update -qq
+      apt-get install -y -qq curl ca-certificates gnupg
 
-    # Remove any previous broken/incomplete Node.js installs (common cause of missing npm)
-    apt-get remove -y -qq nodejs npm 2>/dev/null || true
-    apt-get autoremove -y -qq 2>/dev/null || true
+      # پاک کردن نسخه‌های قبلی ناقص
+      apt-get remove -y -qq nodejs npm 2>/dev/null || true
+      apt-get autoremove -y -qq 2>/dev/null || true
 
-    mkdir -p /etc/apt/keyrings
-    curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
-      | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+      mkdir -p /etc/apt/keyrings
+      curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+        | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
 
-    echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_${NODE_VERSION_MIN}.x nodistro main" \
-      > /etc/apt/sources.list.d/nodesource.list
+      echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_${NODE_VERSION_MIN}.x nodistro main" \
+        > /etc/apt/sources.list.d/nodesource.list
 
-    apt-get update -qq
-    apt-get install -y -qq nodejs
-
-    # Fallback: on some Ubuntu versions NodeSource package may still leave npm missing
-    if ! command_exists npm; then
-      warn "npm not found after NodeSource install. Installing npm as fallback..."
-      apt-get install -y -qq npm
+      apt-get update -qq
+      apt-get install -y -qq nodejs
+    elif command_exists dnf; then
+      dnf module reset -y nodejs
+      dnf module install -y "nodejs:${NODE_VERSION_MIN}"
+    elif command_exists yum; then
+      curl -fsSL https://rpm.nodesource.com/setup_${NODE_VERSION_MIN}.x | bash -
+      yum install -y nodejs
+    else
+      error "Unsupported package manager. Install Node.js ${NODE_VERSION_MIN}+ manually."
     fi
-
-  elif command_exists dnf; then
-    dnf module reset -y nodejs
-    dnf module install -y "nodejs:${NODE_VERSION_MIN}"
-  elif command_exists yum; then
-    curl -fsSL https://rpm.nodesource.com/setup_${NODE_VERSION_MIN}.x | bash -
-    yum install -y nodejs
-  else
-    error "Unsupported package manager. Install Node.js ${NODE_VERSION_MIN}+ manually."
   fi
 
-  # Final hard check
+  # حتی اگر Node درست باشه ولی npm نباشه → نصب کن
+  if ! command_exists npm; then
+    log "npm is missing. Installing npm..."
+    if command_exists apt-get; then
+      apt-get update -qq
+      apt-get install -y -qq npm
+    elif command_exists dnf; then
+      dnf install -y npm
+    elif command_exists yum; then
+      yum install -y npm
+    else
+      error "Cannot install npm automatically on this system."
+    fi
+  fi
+
+  # چک نهایی
   if ! command_exists node || ! command_exists npm; then
-    error "Failed to install a working Node.js + npm. Please install them manually and re-run."
+    error "Failed to install Node.js + npm."
   fi
+
+  log "Node.js $(node -v), npm $(npm -v)"
 }
 
 install_build_tools() {
@@ -130,7 +143,6 @@ current_domain() {
 }
 
 prompt_domain() {
-  # Non-interactive overrides: NO_DOMAIN=1 skips, DOMAIN=x.com pre-sets.
   if [[ "${NO_DOMAIN:-0}" == "1" ]]; then DOMAIN=""; return; fi
   if [[ -n "${DOMAIN:-}" ]]; then return; fi
 
@@ -196,7 +208,6 @@ https_port_busy() {
 
 prompt_https_port() {
   [[ -z "${DOMAIN}" ]] && return 0
-  # Non-interactive override: HTTPS_PORT=8443 pre-sets the choice.
   if [[ -n "${HTTPS_PORT_FORCE:-}" ]]; then HTTPS_PORT="${HTTPS_PORT_FORCE}"; return; fi
 
   local saved input
@@ -278,8 +289,6 @@ configure_caddy() {
   if [[ "${HTTPS_PORT}" == "443" ]]; then
     site="${DOMAIN}"
   else
-    # Non-standard HTTPS port (443 busy). Telegram webhooks accept ports
-    # 443, 80, 88 and 8443 — 8443 keeps the bot's webhook usable too.
     site="https://${DOMAIN}:${HTTPS_PORT}"
   fi
 
@@ -361,7 +370,6 @@ if [[ "${IS_UPDATE}" -eq 1 ]]; then
   log "=========================================="
   log "  NovaRoute UPDATE"
   log "=========================================="
-  # Reuse the port recorded during install (Caddy + summary need it).
   if [[ -f "${INSTALL_DIR}/.env" ]] && grep -q "^PORT=" "${INSTALL_DIR}/.env"; then
     PORT="$(sed -n 's/^PORT=//p' "${INSTALL_DIR}/.env" | head -n1)"
   fi
@@ -375,8 +383,6 @@ else
   prompt_port
 fi
 
-# Domain + HTTPS port must be decided BEFORE the build:
-# NEXT_PUBLIC_BASE_URL is baked into the client bundle at build time.
 DOMAIN="${DOMAIN:-}"
 HTTPS_PORT="${HTTPS_PORT:-443}"
 prompt_domain
@@ -385,17 +391,9 @@ prompt_https_port
 upsert_env PUBLIC_HTTPS_PORT "${HTTPS_PORT}"
 
 # ---------------------------------------------------------------------------
-# Node.js
+# Node.js + npm (همیشه چک و نصب می‌شه)
 # ---------------------------------------------------------------------------
-if ! node_version_ok; then
-  install_nodejs
-fi
-
-# Safe logging + hard requirement for npm
-if ! command_exists node || ! command_exists npm; then
-  error "Node.js or npm is missing. Run the installer again or install them manually."
-fi
-log "Node.js $(node -v), npm $(npm -v)"
+ensure_nodejs_and_npm
 
 # ---------------------------------------------------------------------------
 # Build tools
@@ -451,7 +449,6 @@ else
 
   PREV_DOMAIN="$(current_domain)"
   if [[ -z "${DOMAIN}" && -n "${PREV_DOMAIN}" ]]; then
-    # prompt_domain already ran; empty DOMAIN here means the user removed it.
     remove_caddy_domain
   fi
   apply_domain_env
