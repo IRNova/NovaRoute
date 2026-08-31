@@ -1,2 +1,13 @@
-# Auto detect text files and perform LF normalization
+# Normalize line endings for all text files
 * text=auto
+
+# Shell scripts must stay LF (Linux-only)
+*.sh text eol=lf
+
+# Config files
+*.mjs text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.svg text eol=lf
+*.env* text eol=lf

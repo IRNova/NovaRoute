@@ -1,0 +1,242 @@
+// Nova Bot — external integrations: Google Drive, Home Assistant, X search,
+// and platform emoji-reactions. All credentials live in kv scope "novaInteg"
+// so admins configure them once from the dashboard/API side.
+
+import { makeKv } from "@/lib/db/helpers/kvStore.js";
+
+const kv = makeKv("novaInteg");
+
+async function cfg(key) {
+  const c = (await kv.get(key, null)) || null;
+  return c || null;
+}
+
+/* ── Google Drive (Drive API v3, OAuth access token) ───────────────── */
+
+function driveHeaders(tok) {
+  return { authorization: `Bearer ${tok}` };
+}
+
+export async function driveList({ query, max }) {
+  const c = await cfg("gdrive");
+  if (!c?.accessToken) throw new Error('no Google token — set novaInteg "gdrive" {"accessToken"}');
+  const params = new URLSearchParams({
+    pageSize: String(Math.min(parseInt(max, 10) || 10, 50)),
+    fields: "files(id,name,mimeType,size,modifiedTime)",
+    ...(query ? { q: String(query) } : {}),
+  });
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`, {
+    headers: driveHeaders(c.accessToken),
+    signal: AbortSignal.timeout(20_000),
+  });
+  const json = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(json?.error?.message || `Drive HTTP ${res.status}`);
+  const files = json?.files || [];
+  if (!files.length) return "No files.";
+  return files.map((f) => `${f.id} · ${f.name} (${f.mimeType}${f.size ? `, ${f.size}B` : ""})`).join("\n");
+}
+
+export async function driveRead({ file_id }) {
+  const c = await cfg("gdrive");
+  if (!c?.accessToken) throw new Error("no Google token");
+  // Export Google-Docs style files, download binaries/plain.
+  const metaRes = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(file_id)}?fields=name,mimeType`, {
+    headers: driveHeaders(c.accessToken),
+    signal: AbortSignal.timeout(15_000),
+  });
+  const meta = await metaRes.json().catch(() => null);
+  if (!metaRes.ok) throw new Error(meta?.error?.message || `HTTP ${metaRes.status}`);
+
+  const isGDocs = /^application\/vnd\.google-apps\./.test(meta.mimeType || "");
+  const url = isGDocs
+    ? `https://www.googleapis.com/drive/v3/files/${file_id}/export?mimeType=text/plain`
+    : `https://www.googleapis.com/drive/v3/files/${file_id}?alt=media`;
+  const res = await fetch(url, { headers: driveHeaders(c.accessToken), signal: AbortSignal.timeout(30_000) });
+  if (!res.ok) throw new Error(`download HTTP ${res.status}`);
+  const text = await res.text();
+  return `File: ${meta.name}\n---\n${text.length > 12_000 ? text.slice(0, 12_000) + `\n…[total ${text.length}]` : text}`;
+}
+
+export async function driveSearch({ query, max }) {
+  const q = `name contains '${String(query || "").replace(/'/g, "")}'`;
+  return driveList({ query: q, max });
+}
+
+/* ── Home Assistant (REST API, long-lived access token) ────────────── */
+
+export async function haStates({ entity_id }) {
+  const c = await cfg("homeassistant");
+  if (!c?.url || !c?.token) throw new Error('no HA config — set novaInteg "homeassistant" {"url","token"}');
+  const res = await fetch(`${String(c.url).replace(/\/$/, "")}/api/states${entity_id ? "/" + encodeURIComponent(entity_id) : ""}`, {
+    headers: { authorization: `Bearer ${c.token}` },
+    signal: AbortSignal.timeout(15_000),
+  });
+  const json = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(json?.message || `HA HTTP ${res.status}`);
+  if (entity_id) {
+    const s = json;
+    return `${s.entity_id}: ${s.state}${s.attributes?.friendly_name ? ` (${s.attributes.friendly_name})` : ""}`;
+  }
+  const list = Array.isArray(json) ? json.slice(0, 40) : [];
+  return list.map((s) => `${s.entity_id}: ${s.state}`).join("\n") || "(no entities)";
+}
+
+export async function haCall({ domain, service, entity_id, data }) {
+  const c = await cfg("homeassistant");
+  if (!c?.url || !c?.token) throw new Error("no HA config");
+  const body = { ...(data || {}) };
+  if (entity_id) body.entity_id = entity_id;
+  const res = await fetch(`${String(c.url).replace(/\/$/, "")}/api/services/${encodeURIComponent(domain)}/${encodeURIComponent(service)}`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${c.token}`, "content-type": "application/json" },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!res.ok) throw new Error(`HA HTTP ${res.status}`);
+  return `✅ Called ${domain}.${service}${entity_id ? ` → ${entity_id}` : ""}.`;
+}
+
+/* ── X (Twitter) search via xAI API ────────────────────────────────── */
+
+export async function xSearch({ query, max_results }) {
+  const c = await cfg("xai");
+  if (!c?.apiKey) throw new Error('no xAI key — set novaInteg "xai" {"apiKey"}');
+  const limit = Math.min(parseInt(max_results, 10) || 8, 20);
+  const res = await fetch("https://api.x.ai/v1/chat/completions", {
+    method: "POST",
+    headers: { authorization: `Bearer ${c.apiKey}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      model: "grok-3",
+      messages: [{ role: "user", content: `Search X for recent posts about: ${query}` }],
+      search_parameters: { mode: "live", max_search_results: limit, return_citations: true },
+    }),
+    signal: AbortSignal.timeout(45_000),
+  });
+  const json = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(json?.error?.message || `xAI HTTP ${res.status}`);
+  const answer = json?.choices?.[0]?.message?.content || "(empty)";
+  const cites = (json?.choices?.[0]?.message?.citations || []).slice(0, 8);
+  return answer.slice(0, 4000) + (cites.length ? `\n\nSources:\n${cites.join("\n")}` : "");
+}
+
+/* ── Emoji reactions (platform adapters) ───────────────────────────── */
+
+/** Telegram: set a message reaction (bot must be allowed in that chat). */
+export async function tgSetReaction(token, chatId, messageId, emoji = "👍") {
+  await fetch(`https://api.telegram.org/bot${token}/setMessageReaction`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, message_id: messageId, reaction: [{ type: "emoji", emoji }], is_big: false }),
+    signal: AbortSignal.timeout(10_000),
+  }).catch(() => {});
+}
+
+/** Discord: react to a message (emoji must be URL-encoded unicode ok). */
+export async function discordReact(token, channelId, messageId, emoji = "👍") {
+  await fetch(`https://discord.com/api/v10/channels/${channelId}/messages/${messageId}/reactions/${encodeURIComponent(emoji)}/@me`, {
+    method: "PUT",
+    headers: { authorization: `Bot ${token}` },
+    signal: AbortSignal.timeout(10_000),
+  }).catch(() => {});
+}
+
+/* ── GitHub (via stored PAT) ──────────────────────────────────────── */
+
+import { getGitHubToken } from "@/lib/nova/github.js";
+
+async function ghFetch(path) {
+  const token = await getGitHubToken();
+  if (!token) throw new Error("GitHub not connected — connect in Apps page first.");
+  const res = await fetch(`https://api.github.com${path}`, {
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${token}`,
+      "X-GitHub-Api-Version": "2022-11-28",
+      "User-Agent": "NovaRoute-Bot",
+    },
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || `GitHub API error ${res.status}`);
+  }
+  if (res.status === 204) return null;
+  return res.json();
+}
+
+/** List user's GitHub repositories. */
+export async function ghListRepos({ type = "owner", sort = "updated", per_page = 30 } = {}) {
+  const params = new URLSearchParams({ type, sort, per_page: String(Math.min(per_page, 100)) });
+  const repos = await ghFetch(`/user/repos?${params}`);
+  if (!repos?.length) return "No repositories found.";
+  return repos.map((r) => `${r.name} (${r.private ? "🔒 Private" : "🌐 Public"})${r.language ? ` · ${r.language}` : ""} · ${r.html_url}`).join("\n");
+}
+
+/** Get a specific GitHub repo's details. */
+export async function ghGetRepo({ owner, repo }) {
+  const data = await ghFetch(`/repos/${owner}/${repo}`);
+  return `Name: ${data.name}\nDescription: ${data.description || "(none)"}\nVisibility: ${data.private ? "Private" : "Public"}\nLanguage: ${data.language || "N/A"}\nStars: ${data.stargazers_count} · Forks: ${data.forks_count}\nURL: ${data.html_url}`;
+}
+
+/** List branches of a GitHub repo. */
+export async function ghListBranches({ owner, repo }) {
+  const branches = await ghFetch(`/repos/${owner}/${repo}/branches?per_page=30`);
+  if (!branches?.length) return "No branches found.";
+  return branches.map((b) => `${b.name}${b.protected ? " 🔒" : ""}`).join("\n");
+}
+
+/** List issues of a GitHub repo. */
+export async function ghListIssues({ owner, repo, state = "open", per_page = 20 }) {
+  const params = new URLSearchParams({ state, per_page: String(Math.min(per_page, 50)) });
+  const issues = await ghFetch(`/repos/${owner}/${repo}/issues?${params}`);
+  if (!issues?.length) return `No ${state} issues found.`;
+  return issues.filter((i) => !i.pull_request).map((i) => `#${i.number} ${i.title} [${i.state}] ${i.user?.login || ""}`).join("\n");
+}
+
+/** List recent commits of a GitHub repo. */
+export async function ghListCommits({ owner, repo, sha = "main", per_page = 10 }) {
+  const params = new URLSearchParams({ sha, per_page: String(Math.min(per_page, 30)) });
+  const commits = await ghFetch(`/repos/${owner}/${repo}/commits?${params}`);
+  if (!commits?.length) return "No commits found.";
+  return commits.map((c) => `${c.sha.slice(0, 7)} ${c.commit.message.split("\n")[0]} — ${c.commit.author?.name || ""}`).join("\n");
+}
+
+/* ── Cloudflare (via stored API token) ──────────────────────────── */
+
+import { getCloudflareToken } from "@/lib/nova/cloudflare.js";
+
+async function cfFetch(path) {
+  const token = await getCloudflareToken();
+  if (!token) throw new Error("Cloudflare not connected — connect in Apps page first.");
+  const res = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    signal: AbortSignal.timeout(20_000),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!data.success) throw new Error(data.errors?.[0]?.message || `Cloudflare API error ${res.status}`);
+  return data;
+}
+
+/** List Cloudflare zones (domains). */
+export async function cfListZones({ per_page = 20 } = {}) {
+  const data = await cfFetch(`/zones?per_page=${Math.min(per_page, 50)}`);
+  if (!data.result?.length) return "No zones found.";
+  return data.result.map((z) => `${z.name} (${z.status}) · ID: ${z.id}`).join("\n");
+}
+
+/** List DNS records for a zone. */
+export async function cfListDns({ zone_id, type, name, per_page = 50 } = {}) {
+  const params = new URLSearchParams({ per_page: String(Math.min(per_page, 100)) });
+  if (type) params.set("type", type);
+  if (name) params.set("name", name);
+  const data = await cfFetch(`/zones/${zone_id}/dns_records?${params}`);
+  if (!data.result?.length) return "No DNS records found.";
+  return data.result.map((r) => `${r.type} ${r.name} → ${r.content}${r.proxied ? " (proxied)" : ""}`).join("\n");
+}
+
+/** List Cloudflare Workers. */
+export async function cfListWorkers({ per_page = 25 } = {}) {
+  const data = await cfFetch(`/accounts/workers/scripts?per_page=${Math.min(per_page, 50)}`);
+  if (!data.result?.length) return "No workers found.";
+  return data.result.map((w) => `${w.id} · modified: ${w.modified_on || "n/a"}`).join("\n");
+}

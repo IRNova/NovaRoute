@@ -1,0 +1,37 @@
+services:
+  novaroute:
+    # Built from the Dockerfile in this repo. Switch back to an `image:` line
+    # once an `IRNova/novaroute` image is published to a registry.
+    build:
+      context: .
+    image: novaroute:local
+    container_name: novaroute
+    restart: always
+    ports:
+      - "20128:20128"
+    volumes:
+      - novaroute-data:/app/data
+    env_file:
+      - .env
+    environment:
+      DATA_DIR: /app/data
+      PORT: "20128"
+      HOSTNAME: "0.0.0.0"
+      NODE_ENV: production
+      HEADROOM_URL: http://headroom:8787
+
+  # Optional. Headroom is a separate third-party project and powers only the
+  # Token Saver page; the gateway runs fine without it. It is behind a profile
+  # so it is opt-in rather than started (and pulled) by default:
+  #   docker compose --profile headroom up
+  headroom:
+    profiles: ["headroom"]
+    image: ghcr.io/chopratejas/headroom:latest
+    container_name: headroom
+    restart: always
+    ports:
+      - "8787:8787"
+
+volumes:
+  novaroute-data:
+    name: novaroute-data

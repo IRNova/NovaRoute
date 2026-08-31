@@ -1,0 +1,28 @@
+// Curated Ollama model catalog for the one-click downloader in the dashboard.
+// Names are official library tags; sizes are approximate download sizes.
+export const OLLAMA_MODEL_CATALOG = [
+  { name: "llama3.2:1b", label: "Llama 3.2 1B", size: "1.3 GB", about: "Fast small model for light tasks" },
+  { name: "llama3.2:3b", label: "Llama 3.2 3B", size: "2.0 GB", about: "Balanced small general model" },
+  { name: "llama3.1:8b", label: "Llama 3.1 8B", size: "4.9 GB", about: "Strong all-round 8B model" },
+  { name: "llama3.3:70b", label: "Llama 3.3 70B", size: "43 GB", about: "Flagship open Llama, needs ~48GB RAM/VRAM" },
+  { name: "qwen3:8b", label: "Qwen3 8B", size: "5.2 GB", about: "Latest Qwen with hybrid thinking mode" },
+  { name: "qwen2.5:7b", label: "Qwen2.5 7B", size: "4.7 GB", about: "Reliable multilingual generalist" },
+  { name: "qwen2.5-coder:7b", label: "Qwen2.5 Coder 7B", size: "4.7 GB", about: "Code-specialized, great for IDE use" },
+  { name: "qwen2.5-coder:1.5b", label: "Qwen2.5 Coder 1.5B", size: "986 MB", about: "Tiny coding model for low resources" },
+  { name: "deepseek-r1:7b", label: "DeepSeek R1 7B", size: "4.7 GB", about: "Reasoning-first model (distilled)" },
+  { name: "deepseek-r1:8b", label: "DeepSeek R1 8B", size: "5.2 GB", about: "Reasoning-first model (distilled)" },
+  { name: "deepseek-coder-v2:16b", label: "DeepSeek Coder V2 16B", size: "8.9 GB", about: "MoE coding model" },
+  { name: "gemma3:4b", label: "Gemma 3 4B", size: "3.3 GB", about: "Google's compact multimodal-capable model" },
+  { name: "gemma3:12b", label: "Gemma 3 12B", size: "8.1 GB", about: "Mid-size Gemma 3" },
+  { name: "phi4-mini", label: "Phi-4 Mini", size: "2.5 GB", about: "Microsoft's efficient small model" },
+  { name: "mistral:7b", label: "Mistral 7B", size: "4.1 GB", about: "Classic efficient 7B" },
+  { name: "codellama:13b", label: "Code Llama 13B", size: "7.4 GB", about: "Meta's code model" },
+  { name: "codegemma:7b", label: "CodeGemma 7B", size: "5.0 GB", about: "Google code completion model" },
+  { name: "starcoder2:3b", label: "StarCoder2 3B", size: "1.7 GB", about: "Lightweight code generation" },
+  { name: "llava:7b", label: "LLaVA 7B", size: "4.7 GB", about: "Vision + language (image understanding)" },
+  { name: "llama3.2-vision:11b", label: "Llama 3.2 Vision 11B", size: "7.9 GB", about: "Multimodal vision model" },
+  { name: "nomic-embed-text", label: "Nomic Embed Text", size: "274 MB", about: "Embedding model for RAG/search" },
+  { name: "tinyllama", label: "TinyLlama 1.1B", size: "638 MB", about: "Ultra-light chat model" },
+  { name: "smollm2:1.7b", label: "SmolLM2 1.7B", size: "1.8 GB", about: "Small but capable assistant" },
+  { name: "granite3.3:2b", label: "Granite 3.3 2B", size: "1.6 GB", about: "IBM enterprise-grade small model" },
+];
