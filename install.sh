@@ -49,13 +49,27 @@ install_nodejs() {
   if command_exists apt-get; then
     apt-get update -qq
     apt-get install -y -qq curl ca-certificates gnupg
+
+    # Remove any previous broken/incomplete Node.js installs (common cause of missing npm)
+    apt-get remove -y -qq nodejs npm 2>/dev/null || true
+    apt-get autoremove -y -qq 2>/dev/null || true
+
     mkdir -p /etc/apt/keyrings
     curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
       | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+
     echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_${NODE_VERSION_MIN}.x nodistro main" \
       > /etc/apt/sources.list.d/nodesource.list
+
     apt-get update -qq
     apt-get install -y -qq nodejs
+
+    # Fallback: on some Ubuntu versions NodeSource package may still leave npm missing
+    if ! command_exists npm; then
+      warn "npm not found after NodeSource install. Installing npm as fallback..."
+      apt-get install -y -qq npm
+    fi
+
   elif command_exists dnf; then
     dnf module reset -y nodejs
     dnf module install -y "nodejs:${NODE_VERSION_MIN}"
@@ -64,6 +78,11 @@ install_nodejs() {
     yum install -y nodejs
   else
     error "Unsupported package manager. Install Node.js ${NODE_VERSION_MIN}+ manually."
+  fi
+
+  # Final hard check
+  if ! command_exists node || ! command_exists npm; then
+    error "Failed to install a working Node.js + npm. Please install them manually and re-run."
   fi
 }
 
@@ -370,6 +389,11 @@ upsert_env PUBLIC_HTTPS_PORT "${HTTPS_PORT}"
 # ---------------------------------------------------------------------------
 if ! node_version_ok; then
   install_nodejs
+fi
+
+# Safe logging + hard requirement for npm
+if ! command_exists node || ! command_exists npm; then
+  error "Node.js or npm is missing. Run the installer again or install them manually."
 fi
 log "Node.js $(node -v), npm $(npm -v)"
 
