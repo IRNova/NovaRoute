@@ -76,7 +76,7 @@ ensure_nodejs_and_npm() {
     fi
   fi
 
-  # حتی اگر Node درست باشه ولی npm نباشه → نصب کن
+  # حتی اگر Node درست باشه ولی npm نباشه → خودش نصب می‌کنه
   if ! command_exists npm; then
     log "npm is missing. Installing npm..."
     if command_exists apt-get; then
@@ -91,7 +91,6 @@ ensure_nodejs_and_npm() {
     fi
   fi
 
-  # چک نهایی
   if ! command_exists node || ! command_exists npm; then
     error "Failed to install Node.js + npm."
   fi
@@ -391,7 +390,7 @@ prompt_https_port
 upsert_env PUBLIC_HTTPS_PORT "${HTTPS_PORT}"
 
 # ---------------------------------------------------------------------------
-# Node.js + npm (همیشه چک و نصب می‌شه)
+# Node.js + npm (همیشه چک و در صورت نیاز نصب می‌شود)
 # ---------------------------------------------------------------------------
 ensure_nodejs_and_npm
 
@@ -403,6 +402,7 @@ install_build_tools
 # ---------------------------------------------------------------------------
 # Fresh install: dirs, clone, .env
 # ---------------------------------------------------------------------------
+INITIAL_PASSWORD=""
 if [[ "${IS_UPDATE}" -eq 0 ]]; then
   mkdir -p "${INSTALL_DIR}" "${DATA_DIR}/db" "${DATA_DIR}/logs"
 
@@ -436,8 +436,6 @@ NEXT_PUBLIC_BASE_URL=http://localhost:${PORT}
 CLOUD_URL=
 NEXT_PUBLIC_CLOUD_URL=
 EOF
-    log "Initial password: ${INITIAL_PASSWORD}"
-    log "Save this password - it will not be shown again."
   fi
   apply_domain_env
 else
@@ -533,31 +531,40 @@ configure_caddy
 # Summary
 # ---------------------------------------------------------------------------
 PUBLIC_IP="$(hostname -I | awk '{print $1}' || echo '127.0.0.1')"
-log ""
+
+echo
+log "=========================================="
 if [[ "${IS_UPDATE}" -eq 1 ]]; then
-  log "=== Update complete ==="
+  log "  UPDATE COMPLETE"
 else
-  log "=== Install complete ==="
+  log "  INSTALL COMPLETE"
 fi
+log "=========================================="
+echo
+
 if [[ -n "${DOMAIN}" ]]; then
   if [[ "${HTTPS_PORT}" == "443" ]]; then
     log "Dashboard : https://${DOMAIN}/dashboard"
     log "API       : https://${DOMAIN}/v1"
-    log ""
-    log "Telegram webhook URL: https://${DOMAIN}/api/dashboard/nova/telegram/webhook"
   else
     log "Dashboard : https://${DOMAIN}:${HTTPS_PORT}/dashboard"
     log "API       : https://${DOMAIN}:${HTTPS_PORT}/v1"
-    log ""
-    log "Telegram webhook URL: https://${DOMAIN}:${HTTPS_PORT}/api/dashboard/nova/telegram/webhook"
   fi
 else
   log "Dashboard : http://${PUBLIC_IP}:${PORT}/dashboard"
   log "API       : http://${PUBLIC_IP}:${PORT}/v1"
 fi
-log ""
+
+# نمایش رمز فقط در نصب اولیه
+if [[ -n "${INITIAL_PASSWORD}" ]]; then
+  echo
+  log "Initial Password : ${INITIAL_PASSWORD}"
+  log "Save this password - it will not be shown again."
+fi
+
+echo
 log "The gateway requires an API key: open Dashboard > API Keys and create one"
-log "before pointing a client at /v1. The dashboard itself and calls from this"
-log "machine keep working without a key."
-log ""
+log "before pointing a client at /v1."
+echo
 log "To update later: re-run this script or use Settings > System & Update"
+echo
