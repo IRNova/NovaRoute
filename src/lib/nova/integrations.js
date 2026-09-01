@@ -143,17 +143,21 @@ export async function discordReact(token, channelId, messageId, emoji = "👍") 
 /* ── GitHub (via stored PAT) ──────────────────────────────────────── */
 
 import { getGitHubToken } from "@/lib/nova/github.js";
+import { createPendingApproval, waitForDecision } from "./tools.js";
 
-async function ghFetch(path) {
+async function ghFetch(path, { method = "GET", body } = {}) {
   const token = await getGitHubToken();
   if (!token) throw new Error("GitHub not connected — connect in Apps page first.");
   const res = await fetch(`https://api.github.com${path}`, {
+    method,
     headers: {
       Accept: "application/vnd.github+json",
       Authorization: `Bearer ${token}`,
       "X-GitHub-Api-Version": "2022-11-28",
       "User-Agent": "NovaRoute-Bot",
+      ...(body ? { "Content-Type": "application/json" } : {}),
     },
+    ...(body ? { body: JSON.stringify(body) } : {}),
     signal: AbortSignal.timeout(20_000),
   });
   if (!res.ok) {
@@ -162,6 +166,22 @@ async function ghFetch(path) {
   }
   if (res.status === 204) return null;
   return res.json();
+}
+
+/**
+ * Every write goes past a human first.
+ *
+ * The read-only tools were the whole GitHub and Cloudflare surface, so the bot
+ * could describe an account it could not change: "create a repository" simply
+ * had no tool behind it. Writes exist now, and they are gated exactly like the
+ * terminal tool, because an agent with a PAT can delete a repository as easily
+ * as it can create one.
+ */
+async function approveWrite(summary, agentName) {
+  const item = await createPendingApproval({ command: summary, agentName: agentName || "integrations" });
+  const ok = await waitForDecision(item.id);
+  if (!ok) throw new Error(`DENIED: the admin did not approve "${summary}".`);
+  return true;
 }
 
 /** List user's GitHub repositories. */
@@ -201,20 +221,117 @@ export async function ghListCommits({ owner, repo, sha = "main", per_page = 10 }
   return commits.map((c) => `${c.sha.slice(0, 7)} ${c.commit.message.split("\n")[0]} — ${c.commit.author?.name || ""}`).join("\n");
 }
 
+/* ── GitHub writes (approval-gated) ─────────────────────────────── */
+
+/** Create a repository for the connected user. */
+export async function ghCreateRepo({ name, description, private: isPrivate = true, auto_init = true }, meta = {}) {
+  const clean = String(name || "").trim();
+  if (!/^[A-Za-z0-9._-]{1,100}$/.test(clean)) {
+    return "ERROR: repository name must be 1-100 chars of letters, digits, dot, dash or underscore.";
+  }
+  await approveWrite(`GitHub: create ${isPrivate ? "private" : "public"} repository "${clean}"`, meta.agentName);
+  const data = await ghFetch("/user/repos", {
+    method: "POST",
+    body: { name: clean, description: description || undefined, private: !!isPrivate, auto_init: !!auto_init },
+  });
+  return `Created ${data.full_name} (${data.private ? "private" : "public"})\nClone: ${data.clone_url}\nURL: ${data.html_url}`;
+}
+
+/** Create an issue. */
+export async function ghCreateIssue({ owner, repo, title, body, labels }, meta = {}) {
+  if (!owner || !repo || !title) return "ERROR: owner, repo and title are required.";
+  await approveWrite(`GitHub: open issue "${title}" on ${owner}/${repo}`, meta.agentName);
+  const data = await ghFetch(`/repos/${owner}/${repo}/issues`, {
+    method: "POST",
+    body: { title, body: body || undefined, labels: Array.isArray(labels) ? labels : undefined },
+  });
+  return `Opened #${data.number}: ${data.title}\n${data.html_url}`;
+}
+
+/** Create a branch from another branch's head. */
+export async function ghCreateBranch({ owner, repo, branch, from = "main" }, meta = {}) {
+  if (!owner || !repo || !branch) return "ERROR: owner, repo and branch are required.";
+  await approveWrite(`GitHub: create branch "${branch}" from "${from}" on ${owner}/${repo}`, meta.agentName);
+  const base = await ghFetch(`/repos/${owner}/${repo}/git/ref/heads/${encodeURIComponent(from)}`);
+  const data = await ghFetch(`/repos/${owner}/${repo}/git/refs`, {
+    method: "POST",
+    body: { ref: `refs/heads/${branch}`, sha: base.object.sha },
+  });
+  return `Created branch ${branch} at ${data.object.sha.slice(0, 7)}`;
+}
+
+/** Create or update a single file, which is how a commit is made over the API. */
+export async function ghPutFile({ owner, repo, path, content, message, branch }, meta = {}) {
+  if (!owner || !repo || !path || typeof content !== "string") {
+    return "ERROR: owner, repo, path and content are required.";
+  }
+  const msg = message || `Update ${path}`;
+  await approveWrite(`GitHub: commit "${msg}" to ${owner}/${repo}:${branch || "default"} (${path})`, meta.agentName);
+  // Updating an existing file needs its blob sha; a missing file is a create.
+  let sha;
+  try {
+    const existing = await ghFetch(
+      `/repos/${owner}/${repo}/contents/${encodeURIComponent(path)}${branch ? `?ref=${encodeURIComponent(branch)}` : ""}`
+    );
+    sha = Array.isArray(existing) ? undefined : existing?.sha;
+  } catch {
+    sha = undefined;
+  }
+  const data = await ghFetch(`/repos/${owner}/${repo}/contents/${encodeURIComponent(path)}`, {
+    method: "PUT",
+    body: {
+      message: msg,
+      content: Buffer.from(content, "utf8").toString("base64"),
+      ...(sha ? { sha } : {}),
+      ...(branch ? { branch } : {}),
+    },
+  });
+  return `${sha ? "Updated" : "Created"} ${path} — ${data.commit.sha.slice(0, 7)}\n${data.content?.html_url || ""}`;
+}
+
+/** Open a pull request. */
+export async function ghCreatePr({ owner, repo, title, head, base = "main", body }, meta = {}) {
+  if (!owner || !repo || !title || !head) return "ERROR: owner, repo, title and head are required.";
+  await approveWrite(`GitHub: open PR "${title}" (${head} -> ${base}) on ${owner}/${repo}`, meta.agentName);
+  const data = await ghFetch(`/repos/${owner}/${repo}/pulls`, {
+    method: "POST",
+    body: { title, head, base, body: body || undefined },
+  });
+  return `Opened PR #${data.number}: ${data.title}\n${data.html_url}`;
+}
+
 /* ── Cloudflare (via stored API token) ──────────────────────────── */
 
 import { getCloudflareToken } from "@/lib/nova/cloudflare.js";
 
-async function cfFetch(path) {
+async function cfFetch(path, { method = "GET", body } = {}) {
   const token = await getCloudflareToken();
   if (!token) throw new Error("Cloudflare not connected — connect in Apps page first.");
   const res = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
+    method,
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    ...(body ? { body: JSON.stringify(body) } : {}),
     signal: AbortSignal.timeout(20_000),
   });
   const data = await res.json().catch(() => ({}));
   if (!data.success) throw new Error(data.errors?.[0]?.message || `Cloudflare API error ${res.status}`);
   return data;
+}
+
+/**
+ * Cloudflare account id, resolved once per process.
+ *
+ * Most account-scoped endpoints need it in the path. cfListWorkers asked for
+ * /accounts/workers/scripts with no id at all, which cannot match a route.
+ */
+let cfAccountId = null;
+async function cfAccount() {
+  if (cfAccountId) return cfAccountId;
+  const data = await cfFetch("/accounts?per_page=1");
+  const id = data.result?.[0]?.id;
+  if (!id) throw new Error("No Cloudflare account is visible to this API token.");
+  cfAccountId = id;
+  return id;
 }
 
 /** List Cloudflare zones (domains). */
@@ -236,7 +353,72 @@ export async function cfListDns({ zone_id, type, name, per_page = 50 } = {}) {
 
 /** List Cloudflare Workers. */
 export async function cfListWorkers({ per_page = 25 } = {}) {
-  const data = await cfFetch(`/accounts/workers/scripts?per_page=${Math.min(per_page, 50)}`);
+  const account = await cfAccount();
+  const data = await cfFetch(`/accounts/${account}/workers/scripts?per_page=${Math.min(per_page, 50)}`);
   if (!data.result?.length) return "No workers found.";
   return data.result.map((w) => `${w.id} · modified: ${w.modified_on || "n/a"}`).join("\n");
+}
+
+/* ── Cloudflare writes (approval-gated) ─────────────────────────── */
+
+const CF_DNS_TYPES = new Set(["A", "AAAA", "CNAME", "TXT", "MX", "NS", "SRV", "CAA"]);
+
+/** Create a DNS record. */
+export async function cfCreateDns({ zone_id, type, name, content, ttl = 1, proxied = false }, meta = {}) {
+  if (!zone_id || !type || !name || !content) return "ERROR: zone_id, type, name and content are required.";
+  const t = String(type).toUpperCase();
+  if (!CF_DNS_TYPES.has(t)) return `ERROR: unsupported record type ${t}.`;
+  await approveWrite(`Cloudflare: create ${t} record ${name} -> ${content}`, meta.agentName);
+  const data = await cfFetch(`/zones/${zone_id}/dns_records`, {
+    method: "POST",
+    body: { type: t, name, content, ttl, proxied: !!proxied },
+  });
+  return `Created ${data.result.type} ${data.result.name} -> ${data.result.content} (id ${data.result.id})`;
+}
+
+/** Update an existing DNS record. */
+export async function cfUpdateDns({ zone_id, record_id, type, name, content, ttl = 1, proxied }, meta = {}) {
+  if (!zone_id || !record_id) return "ERROR: zone_id and record_id are required.";
+  await approveWrite(`Cloudflare: update DNS record ${record_id} in zone ${zone_id}`, meta.agentName);
+  const current = await cfFetch(`/zones/${zone_id}/dns_records/${record_id}`);
+  const body = {
+    type: (type || current.result.type).toUpperCase(),
+    name: name || current.result.name,
+    content: content ?? current.result.content,
+    ttl: ttl ?? current.result.ttl,
+    proxied: proxied ?? current.result.proxied,
+  };
+  const data = await cfFetch(`/zones/${zone_id}/dns_records/${record_id}`, { method: "PUT", body });
+  return `Updated ${data.result.type} ${data.result.name} -> ${data.result.content}`;
+}
+
+/**
+ * Delete a DNS record.
+ *
+ * Deliberately the only destructive integration tool. Removing a record can
+ * take a site off the internet, so the approval line names the exact record
+ * rather than just its id.
+ */
+export async function cfDeleteDns({ zone_id, record_id }, meta = {}) {
+  if (!zone_id || !record_id) return "ERROR: zone_id and record_id are required.";
+  const current = await cfFetch(`/zones/${zone_id}/dns_records/${record_id}`);
+  const r = current.result;
+  await approveWrite(`Cloudflare: DELETE ${r.type} ${r.name} -> ${r.content}`, meta.agentName);
+  await cfFetch(`/zones/${zone_id}/dns_records/${record_id}`, { method: "DELETE" });
+  return `Deleted ${r.type} ${r.name}`;
+}
+
+/** Purge a zone's cache, either everything or specific URLs. */
+export async function cfPurgeCache({ zone_id, files }, meta = {}) {
+  if (!zone_id) return "ERROR: zone_id is required.";
+  const everything = !Array.isArray(files) || files.length === 0;
+  await approveWrite(
+    everything ? `Cloudflare: purge the ENTIRE cache of zone ${zone_id}` : `Cloudflare: purge ${files.length} URL(s) from zone ${zone_id}`,
+    meta.agentName
+  );
+  await cfFetch(`/zones/${zone_id}/purge_cache`, {
+    method: "POST",
+    body: everything ? { purge_everything: true } : { files },
+  });
+  return everything ? "Purged the whole zone cache." : `Purged ${files.length} URL(s).`;
 }

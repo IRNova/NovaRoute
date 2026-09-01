@@ -3,6 +3,7 @@ import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { testProxyUrl } from "@/lib/network/proxyTest";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
+import REGISTRY from "open-sse/providers/registry/index.js";
 import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js";
 import { CLAUDE_CLI_SPOOF_HEADERS } from "open-sse/providers/shared.js";
 import {
@@ -19,6 +20,91 @@ import {
   KIMCHI_CONFIG,
 } from "@/lib/oauth/constants/oauth";
 import { buildClineHeaders } from "@/shared/utils/clineAuth";
+
+const REGISTRY_BY_ID = new Map(REGISTRY.map((r) => [r.id, r]));
+
+/**
+ * Turn a chat endpoint into the models endpoint beside it.
+ * https://host/v1/chat/completions -> https://host/v1/models
+ */
+export function deriveModelsUrl(baseUrl) {
+  if (!baseUrl || typeof baseUrl !== "string") return null;
+  try {
+    const u = new URL(baseUrl);
+    u.search = "";
+    u.hash = "";
+    let path = u.pathname.replace(/\/+$/, "");
+    path = path.replace(/\/(chat\/completions|completions|messages|responses|chat)$/, "");
+    u.pathname = `${path}/models`;
+    return u.toString();
+  } catch {
+    return null;
+  }
+}
+
+/** Auth header exactly as the registry declares it for this provider. */
+export function buildRegistryAuthHeaders(auth, apiKey) {
+  const header = auth?.header || "Authorization";
+  const scheme = auth?.scheme;
+  let value;
+  if (scheme === "raw") value = apiKey;
+  else if (scheme && scheme !== "bearer") value = `${scheme} ${apiKey}`;
+  else if (header.toLowerCase() === "authorization") value = `Bearer ${apiKey}`;
+  else value = apiKey;
+  return { [header]: value, Accept: "application/json" };
+}
+
+/**
+ * Generic probe built from the provider's own registry transport.
+ *
+ * Only about 80 of the 368 providers have a hand-written test entry below. The
+ * rest used to return valid:false with "Provider test not supported", which the
+ * dashboard stored as testStatus "error" — so pressing Test marked a perfectly
+ * good provider permanently broken, and other code then skipped it. The
+ * registry already declares the base URL and auth header the gateway itself
+ * uses, so the same information can probe the provider.
+ *
+ * Returns valid:null when no probe is possible. That is "unknown", not "broken".
+ */
+async function testViaRegistryTransport(connection, effectiveProxy = null) {
+  const entry = REGISTRY_BY_ID.get(connection.provider);
+  const transport = entry?.transport || {};
+  const url = deriveModelsUrl(connection.baseUrl || transport.baseUrl);
+  if (!url) return { valid: null, error: "No test is available for this provider yet" };
+  if (!connection.apiKey) return { valid: false, error: "No API key saved" };
+
+  let res;
+  try {
+    res = await fetchWithConnectionProxy(
+      url,
+      { headers: buildRegistryAuthHeaders(transport.auth, connection.apiKey) },
+      effectiveProxy,
+    );
+  } catch (err) {
+    return { valid: false, error: err.message };
+  }
+
+  if (res.status === 401 || res.status === 403) return { valid: false, error: "Invalid API key" };
+  if (res.status === 402) return { valid: false, error: "Credits exhausted — add more credits" };
+  // Being rate limited proves the credential was accepted.
+  if (res.status === 429) return { valid: true, error: null, warning: "Rate limited — the key itself is valid" };
+  // The provider simply does not publish a catalogue; that says nothing about
+  // whether chat works, so do not call it broken.
+  if (res.status === 404 || res.status === 405) {
+    return { valid: null, error: "Provider has no models endpoint to probe" };
+  }
+  if (!res.ok) return { valid: false, error: `Models endpoint returned ${res.status}` };
+
+  // A 200 alone is not success: a captive portal, a parked domain or an error
+  // page all return 200 with HTML. Require a parseable JSON body.
+  try {
+    const body = await res.text();
+    JSON.parse(body);
+    return { valid: true, error: null };
+  } catch {
+    return { valid: false, error: "Models endpoint did not return JSON" };
+  }
+}
 
 // ─── API Key provider test config ─────────────────────────────────────────────
 // Config-driven: each entry maps a provider ID to a test endpoint.
@@ -769,7 +855,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
 
     // ─── Config-driven test lookup ──────────────────────────────────────────
     const testCfg = API_KEY_TEST_CONFIG[connection.provider];
-    if (!testCfg) return { valid: false, error: "Provider test not supported" };
+    if (!testCfg) return await testViaRegistryTransport(connection, effectiveProxy);
 
     // Custom test handlers
     if (testCfg.customTest === "anthropic") {
@@ -886,14 +972,22 @@ export async function testSingleConnection(id) {
   // out of credits. Keep testStatus active; surface the message as lastError so the
   // dashboard can show a warning without marking the connection broken.
   const softWarning = result.valid && (result.warning || result.error);
+
+  // Three outcomes, not two. valid:null means "we have no way to probe this
+  // provider", which is not a failure: storing "error" for it marked working
+  // providers permanently broken and made other code skip them. It maps to the
+  // dashboard's existing "Untested" state.
+  const unknown = result.valid === null || result.valid === undefined;
   const updateData = {
-    testStatus: result.valid ? "active" : "error",
-    lastError: result.valid ? (softWarning || null) : result.error,
-    lastErrorAt: result.valid
-      ? softWarning
-        ? new Date().toISOString()
-        : null
-      : new Date().toISOString(),
+    testStatus: unknown ? "untested" : result.valid ? "active" : "error",
+    lastError: unknown ? result.error || null : result.valid ? softWarning || null : result.error,
+    lastErrorAt: unknown
+      ? null
+      : result.valid
+        ? softWarning
+          ? new Date().toISOString()
+          : null
+        : new Date().toISOString(),
   };
 
   if (result.refreshed && result.newTokens) {
@@ -917,5 +1011,12 @@ export async function testSingleConnection(id) {
 
   await updateProviderConnection(id, updateData);
 
-  return { valid: result.valid, error: result.error, refreshed: !!result.refreshed, latencyMs, testedAt: new Date().toISOString() };
+  return {
+    valid: result.valid ?? null,
+    unknown,
+    error: result.error,
+    refreshed: !!result.refreshed,
+    latencyMs,
+    testedAt: new Date().toISOString(),
+  };
 }

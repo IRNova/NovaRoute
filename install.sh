@@ -77,9 +77,16 @@ ensure_nodejs_and_npm() {
   fi
 
   # حتی اگر Node درست باشه ولی npm نباشه → خودش نصب می‌کنه
+  #
+  # The distro `npm` package depends on the distro `nodejs`, so installing it
+  # on top of a NodeSource install drags in a second, older Node and undoes
+  # the version pin above. NodeSource ships npm with nodejs, so the right
+  # repair for a missing npm is to reinstall nodejs from the same source.
   if ! command_exists npm; then
-    log "npm is missing. Installing npm..."
-    if command_exists apt-get; then
+    log "npm is missing. Repairing the Node.js installation..."
+    if command_exists apt-get && [[ -f /etc/apt/sources.list.d/nodesource.list ]]; then
+      apt-get install -y -qq --reinstall nodejs
+    elif command_exists apt-get; then
       apt-get update -qq
       apt-get install -y -qq npm
     elif command_exists dnf; then
@@ -91,11 +98,42 @@ ensure_nodejs_and_npm() {
     fi
   fi
 
+  # A distro repair can silently downgrade Node below the minimum.
+  if ! node_version_ok; then
+    error "Node.js $(node -v 2>/dev/null || echo 'unknown') is below the required v${NODE_VERSION_MIN}. Install it manually and re-run."
+  fi
+
   if ! command_exists node || ! command_exists npm; then
     error "Failed to install Node.js + npm."
   fi
 
   log "Node.js $(node -v), npm $(npm -v)"
+}
+
+# git is not optional: the install clones the repository and the in-panel
+# updater runs `git fetch`/`git reset` against that checkout. A minimal cloud
+# image has neither git nor curl, and the clone used to be the first thing to
+# find out.
+ensure_base_tools() {
+  local missing=()
+  command_exists git || missing+=(git)
+  command_exists curl || missing+=(curl)
+  command_exists tar || missing+=(tar)
+  [[ ${#missing[@]} -eq 0 ]] && return 0
+  log "Installing required tools: ${missing[*]}"
+  if command_exists apt-get; then
+    apt-get update -qq
+    apt-get install -y -qq ca-certificates "${missing[@]}"
+  elif command_exists dnf; then
+    dnf install -y ca-certificates "${missing[@]}"
+  elif command_exists yum; then
+    yum install -y ca-certificates "${missing[@]}"
+  else
+    error "Install these manually and re-run: ${missing[*]}"
+  fi
+  for tool in "${missing[@]}"; do
+    command_exists "${tool}" || error "Failed to install ${tool}."
+  done
 }
 
 install_build_tools() {
@@ -142,11 +180,27 @@ current_domain() {
 }
 
 prompt_domain() {
+  # Non-interactive overrides: NO_DOMAIN=1 skips, DOMAIN=x.com pre-sets.
   if [[ "${NO_DOMAIN:-0}" == "1" ]]; then DOMAIN=""; return; fi
   if [[ -n "${DOMAIN:-}" ]]; then return; fi
 
   local existing answer input
   existing="$(current_domain)"
+
+  # Headless run: keep whatever is already configured. Clearing DOMAIN here
+  # would make the update path treat it as "the operator removed the domain"
+  # and tear down HTTPS on a working install.
+  if ! has_tty; then
+    if [[ -n "${existing}" ]]; then
+      DOMAIN="${existing}"
+      log "No terminal available; keeping the configured domain ${DOMAIN}."
+    else
+      DOMAIN=""
+      log "No terminal available; continuing without a domain (HTTP only)."
+    fi
+    return
+  fi
+
   echo
   if [[ "${IS_UPDATE}" -eq 1 ]]; then
     if [[ -n "${existing}" ]]; then
@@ -207,12 +261,27 @@ https_port_busy() {
 
 prompt_https_port() {
   [[ -z "${DOMAIN}" ]] && return 0
+  # Non-interactive override: HTTPS_PORT=8443 pre-sets the choice.
   if [[ -n "${HTTPS_PORT_FORCE:-}" ]]; then HTTPS_PORT="${HTTPS_PORT_FORCE}"; return; fi
 
   local saved input
   saved=""
   if [[ -f "${INSTALL_DIR}/.env" ]]; then
     saved="$(sed -n 's/^PUBLIC_HTTPS_PORT=//p' "${INSTALL_DIR}/.env" | head -n1 || true)"
+  fi
+
+  # Headless run: reuse the port this install already serves on. Falling back
+  # to 443 would move a working site to a port Caddy is not bound to.
+  if ! has_tty; then
+    if [[ -n "${saved}" ]]; then
+      HTTPS_PORT="${saved}"
+    elif https_port_busy; then
+      HTTPS_PORT=8443
+      warn "TCP port 443 is in use and there is no terminal to ask; using ${HTTPS_PORT}."
+    else
+      HTTPS_PORT=443
+    fi
+    return
   fi
 
   if ! https_port_busy; then
@@ -288,6 +357,8 @@ configure_caddy() {
   if [[ "${HTTPS_PORT}" == "443" ]]; then
     site="${DOMAIN}"
   else
+    # Non-standard HTTPS port (443 busy). Telegram webhooks accept ports
+    # 443, 80, 88 and 8443, so 8443 keeps the bot's webhook usable too.
     site="https://${DOMAIN}:${HTTPS_PORT}"
   fi
 
@@ -342,11 +413,28 @@ apply_domain_env() {
   fi
 }
 
+# True when the installer has a terminal to prompt on. The documented
+# one-liner pipes the script into bash, so stdin is the pipe and /dev/tty is
+# the terminal; but under CI, cloud-init, or an SSH session with no pty there
+# is no terminal at all and every prompt must fall back to its default.
+# A subshell so the probe cannot leak a descriptor, and 2>/dev/null so the
+# "No such device or address" from a headless run is not mistaken for an error.
+has_tty() {
+  [[ -e /dev/tty ]] || return 1
+  ( exec 3< /dev/tty ) 2>/dev/null
+}
+
 prompt_port() {
-  local input
+  local input=""
+  if ! has_tty; then
+    log "No terminal available; using default HTTP port ${PORT}."
+    return
+  fi
   echo
   log "NovaRoute default HTTP port is ${PORT}."
-  read -r -p "Press Enter to accept [${PORT}] or type a different port: " input < /dev/tty || true
+  # `|| true` would leave $input unset, and `set -u` then aborts the whole
+  # install on the very first prompt. Always assign.
+  read -r -p "Press Enter to accept [${PORT}] or type a different port: " input < /dev/tty || input=""
   if [[ -n "${input}" ]]; then
     if ! [[ "${input}" =~ ^[0-9]+$ ]] || [[ "${input}" -lt 1 ]] || [[ "${input}" -gt 65535 ]]; then
       error "Invalid port: ${input}. Must be 1-65535."
@@ -369,6 +457,7 @@ if [[ "${IS_UPDATE}" -eq 1 ]]; then
   log "=========================================="
   log "  NovaRoute UPDATE"
   log "=========================================="
+  # Reuse the port recorded during install (Caddy + summary need it).
   if [[ -f "${INSTALL_DIR}/.env" ]] && grep -q "^PORT=" "${INSTALL_DIR}/.env"; then
     PORT="$(sed -n 's/^PORT=//p' "${INSTALL_DIR}/.env" | head -n1)"
   fi
@@ -382,12 +471,19 @@ else
   prompt_port
 fi
 
+# Domain + HTTPS port must be decided BEFORE the build:
+# NEXT_PUBLIC_BASE_URL is baked into the client bundle at build time.
 DOMAIN="${DOMAIN:-}"
 HTTPS_PORT="${HTTPS_PORT:-443}"
 prompt_domain
 validate_domain
 prompt_https_port
 upsert_env PUBLIC_HTTPS_PORT "${HTTPS_PORT}"
+
+# ---------------------------------------------------------------------------
+# Base tools (git/curl/tar) — needed by the clone and by the in-panel updater
+# ---------------------------------------------------------------------------
+ensure_base_tools
 
 # ---------------------------------------------------------------------------
 # Node.js + npm (همیشه چک و در صورت نیاز نصب می‌شود)
@@ -447,6 +543,7 @@ else
 
   PREV_DOMAIN="$(current_domain)"
   if [[ -z "${DOMAIN}" && -n "${PREV_DOMAIN}" ]]; then
+    # prompt_domain already ran; empty DOMAIN here means the user removed it.
     remove_caddy_domain
   fi
   apply_domain_env
@@ -546,9 +643,13 @@ if [[ -n "${DOMAIN}" ]]; then
   if [[ "${HTTPS_PORT}" == "443" ]]; then
     log "Dashboard : https://${DOMAIN}/dashboard"
     log "API       : https://${DOMAIN}/v1"
+    echo
+    log "Telegram webhook URL: https://${DOMAIN}/api/dashboard/nova/telegram/webhook"
   else
     log "Dashboard : https://${DOMAIN}:${HTTPS_PORT}/dashboard"
     log "API       : https://${DOMAIN}:${HTTPS_PORT}/v1"
+    echo
+    log "Telegram webhook URL: https://${DOMAIN}:${HTTPS_PORT}/api/dashboard/nova/telegram/webhook"
   fi
 else
   log "Dashboard : http://${PUBLIC_IP}:${PORT}/dashboard"
@@ -564,7 +665,8 @@ fi
 
 echo
 log "The gateway requires an API key: open Dashboard > API Keys and create one"
-log "before pointing a client at /v1."
+log "before pointing a client at /v1. The dashboard itself and calls from this"
+log "machine keep working without a key."
 echo
 log "To update later: re-run this script or use Settings > System & Update"
 echo

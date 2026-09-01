@@ -69,7 +69,6 @@ export default function DashboardHome({ machineId }) {
   const [version, setVersion] = useState(null);
   const [settings, setSettings] = useState(null);
   const [requireLogin, setRequireLogin] = useState(true);
-  const [actionItems, setActionItems] = useState([]);
   const [healthOpen, setHealthOpen] = useState(false);
 
   useEffect(() => {
@@ -82,13 +81,14 @@ export default function DashboardHome({ machineId }) {
           return await r.json();
         } catch { return null; }
       };
-      const [s, p, v, st, rl, ai] = await Promise.all([
+      // The header's notification bell owns action items now, so this page no
+      // longer fetches them.
+      const [s, p, v, st, rl] = await Promise.all([
         fetchJson("/api/usage/stats?period=7d"),
         fetchJson("/api/providers"),
         fetchJson("/api/version"),
         fetchJson("/api/settings"),
         fetchJson("/api/settings/require-login"),
-        fetchJson("/api/dashboard/action-items"),
       ]);
       if (!on) return;
       setStats(s);
@@ -97,7 +97,6 @@ export default function DashboardHome({ machineId }) {
       setVersion(v);
       setSettings(st);
       setRequireLogin(rl?.requireLogin ?? st?.requireLogin ?? true);
-      setActionItems(Array.isArray(ai?.items) ? ai.items : []);
     })();
     return () => { on = false; };
   }, []);
@@ -143,37 +142,10 @@ export default function DashboardHome({ machineId }) {
 
       {healthOpen && <SystemHealthModal onClose={() => setHealthOpen(false)} />}
 
-      {/* Action items: real warnings that need attention (broken providers,
-          exhausted quotas, insecure defaults). Hidden when all clear. */}
-      {actionItems.length > 0 && (
-        <div className="space-y-2">
-          {actionItems.slice(0, 4).map((item) => (
-            <a
-              key={item.id}
-              href={item.href}
-              className={`flex items-center gap-3 px-4 py-2.5 rounded-xl border text-sm transition-colors ${
-                item.type === "error"
-                  ? "bg-danger/10 border-danger/30 text-danger hover:bg-danger/15"
-                  : "bg-warning/10 border-warning/30 text-warning hover:bg-warning/15"
-              }`}
-            >
-              <span className="material-symbols-outlined text-[18px]">
-                {item.type === "error" ? "error" : "warning"}
-              </span>
-              <span className="flex-1 min-w-0 truncate" dir="auto">
-                {item.key === "Provider connection failing"
-                  ? `${translate("Provider connection failing")}: ${item.provider}${item.label ? ` (${item.label})` : ""}`
-                  : item.key === "Quota or rate limit hit on"
-                    ? `${translate("Quota or rate limit hit on")} ${item.provider}`
-                    : item.key === "Credit or quota errors detected on"
-                      ? `${translate("Credit or quota errors detected on")} ${item.provider}`
-                      : translate(item.key)}
-              </span>
-              <span className="material-symbols-outlined text-[16px] opacity-70">chevron_left</span>
-            </a>
-          ))}
-        </div>
-      )}
+      {/* Action items are not rendered here any more. They are standing
+          warnings, and they now live in the notification bell in the header,
+          which is on every page - having them here as well meant the dashboard
+          carried a stack of banners the bell knew nothing about. */}
 
       {/* KPI grid */}
       <div className="kpi-grid">

@@ -193,6 +193,31 @@ export default function CacheSettingsPage() {
           />
         </FieldRow>
       </Section>
+
+      <Section title="Idempotency" description="Prevent duplicate requests from creating duplicate cache entries">
+        <FieldRow label="Enable Idempotency Layer">
+          <Toggle
+            checked={semantic.idempotency?.enabled ?? false}
+            onChange={(val) =>
+              updateSemantic({ idempotency: { ...(semantic.idempotency || {}), enabled: val } })
+            }
+          />
+        </FieldRow>
+        {semantic.idempotency?.enabled && (
+          <FieldRow label="Dedup Window (seconds)">
+            <Input
+              type="number"
+              min={5}
+              max={300}
+              value={semantic.idempotency?.windowSec ?? 30}
+              onChange={(e) =>
+                updateSemantic({ idempotency: { ...(semantic.idempotency || {}), windowSec: parseInt(e.target.value) || 30 } })
+              }
+              className="w-20 text-center"
+            />
+          </FieldRow>
+        )}
+      </Section>
     </div>
   );
 }

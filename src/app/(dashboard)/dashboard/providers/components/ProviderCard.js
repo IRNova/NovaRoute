@@ -15,6 +15,7 @@ import { STATUS_META } from "./providerStatus";
 import { translate } from "@/i18n/runtime";
 
 const AUTH_BADGES = {
+  none: { label: "No Key", cls: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
   oauth: { label: "Account Login", cls: "bg-blue-500/10 text-blue-600 dark:text-blue-400" },
   apikey: { label: "API Key", cls: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
   cookie: { label: "Cookie", cls: "bg-teal-500/10 text-teal-600 dark:text-teal-400" },

@@ -108,7 +108,7 @@ export async function GET(request) {
       const isError = status === "error" || status === "expired" || status === "unavailable";
       if (testStatus === "ok") return isOk;
       if (testStatus === "error") return isError;
-      if (testStatus === "untested") return !status;
+      if (testStatus === "untested") return !status || status === "untested" || status === "unknown";
       return true;
     });
 

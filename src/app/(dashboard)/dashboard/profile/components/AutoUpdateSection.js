@@ -18,7 +18,7 @@ const STEP_LABELS = {
   error: "Update failed",
 };
 
-const STEP_ORDER = ["download", "backup", "extract", "install", "build", "restarting"];
+const STEP_ORDER = ["backup", "fetch", "install", "build", "prune", "restarting"];
 
 export default function AutoUpdateSection() {
   const [checking, setChecking] = useState(false);
@@ -77,12 +77,16 @@ export default function AutoUpdateSection() {
   }, [installing]);
 
   const handleInstall = async () => {
-    if (!checkResult?.tagName) return;
+    if (!checkResult?.hasUpdate) return;
+    // Branch channel has no tag; an empty body tells the updater to take the
+    // tracked branch. Requiring a tagName here is what made this button inert
+    // on a repository with no releases.
+    const tag = checkResult.tagName || "";
     try {
       const res = await fetch("/api/github-update/apply", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tag: checkResult.tagName }),
+        body: JSON.stringify(tag ? { tag } : {}),
       });
       const data = await res.json();
       if (!res.ok || data.error) {
@@ -90,11 +94,14 @@ export default function AutoUpdateSection() {
         return;
       }
       setInstalling(true);
-      setStatus({ tag: checkResult.tagName, step: "starting", pct: 1, done: false, log: [] });
+      setStatus({ tag: tag || null, step: "starting", pct: 1, done: false, log: [] });
     } catch {
       setCheckError(translate("Failed to start the update"));
     }
   };
+
+  // A branch build has no semantic version, so "v<sha>" would be a lie.
+  const verLabel = (v) => (checkResult?.channel === "branch" ? String(v || "") : `v${v}`);
 
   const pct = status?.pct ?? 0;
   const currentStep = status?.step || "";
@@ -142,7 +149,7 @@ export default function AutoUpdateSection() {
               <span className="material-symbols-outlined text-[18px]">check_circle</span>
               {translate("You are on the latest version.")}
               {checkResult.latestVersion && (
-                <span className="text-text-muted">({translate("Latest")}: v{checkResult.latestVersion})</span>
+                <span className="text-text-muted">({translate("Latest")}: {verLabel(checkResult.latestVersion)})</span>
               )}
             </div>
           )}
@@ -152,11 +159,11 @@ export default function AutoUpdateSection() {
               <div className="flex flex-wrap items-center gap-2">
                 <span className="material-symbols-outlined text-[20px] text-primary">upgrade</span>
                 <span className="font-semibold text-text-main">
-                  {translate("New version available")}: v{checkResult.latestVersion}
+                  {translate("New version available")}: {verLabel(checkResult.latestVersion)}
                 </span>
                 {checkResult.publishedAt && (
                   <span className="text-xs text-text-muted">
-                    · {new Date(checkResult.publishedAt).toLocaleDateString()}
+                    {new Date(checkResult.publishedAt).toLocaleDateString()}
                   </span>
                 )}
                 <a href={checkResult.releaseUrl} target="_blank" rel="noreferrer" className="text-xs text-primary underline ms-auto">

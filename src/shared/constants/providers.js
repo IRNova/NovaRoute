@@ -187,6 +187,11 @@ export function resolveAuthModes(providerId, providerEntry) {
   if (Array.isArray(info.authModes) && info.authModes.length > 0) {
     for (const m of info.authModes) push(m);
   }
+  // A provider that needs no credential must not be advertised as needing one.
+  // Fifteen free/freeTier entries carry noAuth and were falling through to the
+  // "apikey" default below, so the dashboard grouped and badged them as "API
+  // Key" while the installer had already connected them with authType "none".
+  if (info.noAuth === true || info.authType === "none") push("none");
   if (info.authType === "cookie" || info.category === "webCookie" || WEB_COOKIE_PROVIDERS[providerId]) push("cookie");
   if (CLI_PROVIDER_IDS.has(providerId) || info.category === "cli") push("cli");
   if (info.hasOAuth || info.category === "oauth" || OAUTH_PROVIDERS[providerId]) push("oauth");
@@ -198,7 +203,10 @@ export function resolveAuthModes(providerId, providerEntry) {
   return modes;
 }
 
-const MODE_PRIORITY = ["cookie", "cli", "local", "oauth", "compatible", "apikey"];
+// "none" outranks "apikey" so a keyless provider reads as keyless even when it
+// also accepts an optional key (AI Horde takes one only to buy queue priority),
+// but stays behind the interactive flows, which are genuinely different work.
+const MODE_PRIORITY = ["cookie", "cli", "local", "oauth", "compatible", "none", "apikey"];
 
 export function resolveDisplayAuthType(providerId, providerEntry) {
   const modes = resolveAuthModes(providerId, providerEntry);
@@ -220,6 +228,7 @@ export const AI_PROVIDERS = {
 
 // ─── Auth methods (for UI filter buttons) ─────────────────────────────────────
 export const AUTH_METHODS = {
+  none: { id: "none", label: "No Key Needed", icon: "lock_open" },
   apikey: { id: "apikey", label: "API Key", icon: "key" },
   oauth: { id: "oauth", label: "Account Login", icon: "login" },
   cookie: { id: "cookie", label: "Cookie", icon: "cookie" },

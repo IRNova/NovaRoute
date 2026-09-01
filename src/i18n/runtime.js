@@ -54,6 +54,33 @@ export function onLocaleChange(callback) {
   };
 }
 
+// Elements that cannot hold translatable prose.
+const SKIP_TAGS = new Set([
+  "script", "style", "code", "pre",
+  "colgroup", "table", "thead", "tbody", "tfoot", "tr",
+  "select", "datalist", "optgroup",
+]);
+
+/**
+ * May the text inside this element be replaced with a translation?
+ *
+ * Material icons are ligatures: the glyph is chosen by the element's TEXT, so a
+ * span reading "error" is an icon, not a word. Translating it swaps the icon
+ * for Farsi text. Only "error" collides with the dictionary today, but 160
+ * ligature names are in use ("search", "settings", "close", "info", "warning",
+ * "delete"), and each is one dictionary entry away from breaking silently, in
+ * one language only.
+ *
+ * @param {string} tagName lowercase tag name of the text node's parent
+ * @param {string} className the parent's class attribute
+ */
+export function isTranslatableHost(tagName, className = "") {
+  if (SKIP_TAGS.has(tagName)) return false;
+  const cls = typeof className === "string" ? className : "";
+  if (cls.includes("material-symbols") || cls.includes("material-icons")) return false;
+  return true;
+}
+
 // Process text node
 function processTextNode(node) {
   if (!node.nodeValue || !node.nodeValue.trim()) return;
@@ -74,13 +101,8 @@ function processTextNode(node) {
   const tagName = parent.tagName?.toLowerCase();
   
   // Skip elements that don't allow text nodes
-  const skipTags = [
-    "script", "style", "code", "pre",
-    "colgroup", "table", "thead", "tbody", "tfoot", "tr",
-    "select", "datalist", "optgroup"
-  ];
-  
-  if (skipTags.includes(tagName)) return;
+  const parentClass = typeof parent.className === "string" ? parent.className : "";
+  if (!isTranslatableHost(tagName, parentClass)) return;
   
   // Store original text if not already stored
   if (!node._originalText) {
