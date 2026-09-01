@@ -1,3 +1,18 @@
+# v1.1.1 (2026-09-01)
+
+## Fixes
+- **Update**: the in-panel update button could start but never finish. Three
+  separate causes, each hidden behind the one before it. The install directory
+  was worked out from the process working directory, which the server changes
+  to its own build output on boot, so the updater looked for itself in the
+  wrong place and reported a real installation as not being one. The dependency
+  install then skipped the build tools, because the service runs with
+  NODE_ENV=production and that alone is enough for npm to leave development
+  dependencies out. And the build inherited a variable the server sets on
+  itself at runtime, which makes a fresh build fail outright.
+- **Update**: progress is written next to the installation rather than inside
+  the build output, where a rebuild would erase it.
+
 # v1.1.0 (2026-09-01)
 
 ## Features
