@@ -5,7 +5,10 @@ export const APP_CONFIG = {
   name: "NovaRoute",
   description: "AI Infrastructure Management",
   version: pkg.version,
-  versionLabel: "beta v 0.0.1",
+  // Derived, never hardcoded. This read "beta v 0.0.1" while package.json said
+  // 1.0.0, so the sidebar showed a version the build had not been for a long
+  // time and no release could change it.
+  versionLabel: `v${pkg.version}`,
 };
 
 // GitHub configuration
