@@ -31,6 +31,7 @@ import { getProviderState, STATUS_META } from "./components/providerStatus";
 import { translate } from "@/i18n/runtime";
 
 const GROUP_META = [
+  { id: "none", label: "No Key Needed", icon: "lock_open", size: "sm", hint: "Providers that work without any credential" },
   { id: "apikey", label: "API Key", icon: "key", size: "lg", hint: "Providers using API key authentication" },
   { id: "oauth", label: "Account Login", icon: "login", size: "lg", hint: "Providers using OAuth / device code login" },
   { id: "cookie", label: "Cookie", icon: "cookie", size: "sm", hint: "Providers using browser session cookies" },
@@ -235,12 +236,15 @@ export default function ProvidersPage() {
     setTestingProgress(null);
     const summary = {
       total: results.length,
-      passed: results.filter((r) => r.valid).length,
-      failed: results.filter((r) => !r.valid).length,
+      passed: results.filter((r) => r.valid === true).length,
+      failed: results.filter((r) => r.valid === false).length,
+      // A provider with no probe is not a failed provider.
+      unknown: results.filter((r) => r.valid === null || r.unknown).length,
     };
     setBatchResults({ results, summary, groupLabel: group.label });
-    if (summary.failed === 0) notify.success("All connections passed");
-    else notify.warning(`${summary.passed} passed, ${summary.failed} failed`);
+    const skipped = summary.unknown ? `, ${summary.unknown} could not be tested` : "";
+    if (summary.failed === 0) notify.success(`All testable connections passed${skipped}`);
+    else notify.warning(`${summary.passed} passed, ${summary.failed} failed${skipped}`);
     await fetchAll();
   };
 

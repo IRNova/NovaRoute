@@ -1,57 +1,87 @@
 import { NextResponse } from "next/server";
+import { readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import { execSync } from "node:child_process";
+
+export const dynamic = "force-dynamic";
+
+const REPO = process.env.GITHUB_UPDATE_REPO || "IRNova/NovaRoute";
+const BRANCH = process.env.NOVAROUTE_UPDATE_BRANCH || "main";
+
+// The service runs with WorkingDirectory=<install dir>, so cwd is the checkout.
+// INSTALL_DIR stays as an override for anything launched from elsewhere.
+function installDir() {
+  return process.env.INSTALL_DIR || process.cwd();
+}
+
+function git(args, dir) {
+  try {
+    return execSync(`git ${args}`, { cwd: dir, encoding: "utf-8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"] }).trim();
+  } catch {
+    return "";
+  }
+}
 
 /**
  * GET /api/setup/check-update
  *
- * Checks GitHub for the latest version and compares with installed version.
+ * Compares the checked-out commit against the branch head on GitHub.
  */
 export async function GET() {
   try {
+    const dir = installDir();
     let currentVersion = "unknown";
-    let localSha = "";
-
     try {
-      const { readFileSync } = await import("node:fs");
-      const { join } = await import("node:path");
-      const { execSync } = await import("node:child_process");
-      const installDir = process.env.INSTALL_DIR || "/opt/novaroute";
-      const pkg = JSON.parse(readFileSync(join(installDir, "package.json"), "utf-8"));
-      currentVersion = pkg.version || "unknown";
-      try {
-        localSha = execSync("git rev-parse --short HEAD", {
-          cwd: installDir, encoding: "utf-8", timeout: 5000,
-        }).trim();
-      } catch {}
+      currentVersion = JSON.parse(readFileSync(join(dir, "package.json"), "utf-8")).version || "unknown";
     } catch {}
+
+    // Both sides are abbreviated the same way. `git rev-parse --short` picks a
+    // length from repository size, so comparing it against a fixed 7-character
+    // slice of the API sha could report a phantom update.
+    const localFull = git("rev-parse HEAD", dir);
+    const localSha = localFull.slice(0, 7);
+    const isGitCheckout = existsSync(join(dir, ".git"));
+    const dirty = isGitCheckout ? git("status --porcelain", dir).length > 0 : false;
 
     let latestSha = "";
     let commitMessage = "";
     let commitDate = "";
     let updateAvailable = false;
+    let checkError = "";
 
     try {
-      const res = await fetch("https://api.github.com/repos/IRNova/NovaRoute/commits/main", {
-        headers: { "Accept": "application/vnd.github.v3+json" },
+      const res = await fetch(`https://api.github.com/repos/${REPO}/commits/${BRANCH}`, {
+        headers: { Accept: "application/vnd.github+json", "User-Agent": "NovaRoute-Updater" },
         signal: AbortSignal.timeout(10000),
       });
       if (res.ok) {
         const data = await res.json();
-        latestSha = data.sha?.substring(0, 7) || "";
+        latestSha = String(data.sha || "").slice(0, 7);
         commitMessage = data.commit?.message?.split("\n")[0] || "";
         commitDate = data.commit?.committer?.date || "";
-        if (localSha && latestSha && localSha !== latestSha) {
-          updateAvailable = true;
-        }
+        if (localSha && latestSha && localSha !== latestSha) updateAvailable = true;
+      } else {
+        checkError = `GitHub returned ${res.status}`;
       }
-    } catch {}
+    } catch (err) {
+      checkError = `Could not reach GitHub: ${err.message}`;
+    }
 
     return NextResponse.json({
       current: currentVersion,
+      currentSha: localSha,
       latest: updateAvailable ? `${currentVersion}+${latestSha}` : currentVersion,
       updateAvailable,
       commitSha: latestSha,
       commitMessage,
       commitDate,
+      branch: BRANCH,
+      isGitCheckout,
+      // A build rewrites tracked files (tsconfig.json is the usual one). The
+      // updater resets the tree, so this is informational, not a blocker.
+      workingTreeDirty: dirty,
+      canSelfUpdate: isGitCheckout,
+      error: checkError || undefined,
     });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

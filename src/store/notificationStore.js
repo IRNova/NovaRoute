@@ -11,6 +11,15 @@ let idCounter = 0;
 export const useNotificationStore = create((set, get) => ({
   notifications: [],
 
+  // Standing conditions from /api/dashboard/action-items (a provider that is
+  // failing, a quota that is spent, a default password still in place). They
+  // are not events: they persist until the condition clears, so they are not
+  // auto-dismissed and "Clear all" does not remove them. They used to be
+  // rendered as a stack of banners in the middle of the dashboard, which
+  // duplicated this bell.
+  alerts: [],
+  setAlerts: (alerts) => set({ alerts: Array.isArray(alerts) ? alerts : [] }),
+
   addNotification: (notification) => {
     const id = ++idCounter;
     const entry = {

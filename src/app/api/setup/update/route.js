@@ -1,48 +1,66 @@
 import { NextResponse } from "next/server";
 import { isLocalRequest } from "@/dashboardGuard";
+import { getDashboardAuthSession } from "@/lib/auth/dashboardSession";
+import { normalizeRole } from "@/lib/auth/roles";
+import { startUpdate, readUpdateStatus } from "@/lib/updater/launch";
+
+export const dynamic = "force-dynamic";
+
+const BRANCH = process.env.NOVAROUTE_UPDATE_BRANCH || "main";
 
 /**
  * POST /api/setup/update
  *
- * Pulls latest code from git, rebuilds, and restarts the service.
- * Only accessible from localhost.
+ * Starts a self-update from the tracked git branch and returns immediately;
+ * progress is polled from GET /api/setup/update.
+ *
+ * Access: an admin dashboard session, or a request from the host itself.
+ * This used to be loopback-only, which made it unreachable in the one
+ * deployment that needs it: behind Caddy every request is stamped as
+ * via-proxy, so isLocalRequest is false and the button returned 403 on every
+ * domain install. The route is under ADMIN_ONLY_PREFIXES in the role matrix,
+ * so the guard has already required an admin; this is the second lock.
  */
+async function isAllowed(request) {
+  const session = await getDashboardAuthSession(request.cookies.get("auth_token")?.value);
+  if (session && normalizeRole(session.role || "admin") === "admin") return true;
+  // Host-local callers (the CLI, an operator on the box) keep working.
+  return isLocalRequest(request);
+}
+
 export async function POST(request) {
-  if (!isLocalRequest(request)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await isAllowed(request))) {
+    return NextResponse.json({ error: "Forbidden: admin role required" }, { status: 403 });
   }
 
-  const { execSync } = await import("node:child_process");
-  const installDir = process.env.INSTALL_DIR || "/opt/novaroute";
-  const serviceName = "novaroute";
-  const logs = [];
-
-  try {
-    logs.push("Pulling latest code...");
-    const pullResult = execSync("git pull origin main", {
-      cwd: installDir, encoding: "utf-8", timeout: 120000,
-    });
-    logs.push(pullResult.trim());
-
-    logs.push("Installing dependencies...");
-    execSync("npm install --omit=dev --no-audit --no-fund 2>&1", {
-      cwd: installDir, encoding: "utf-8", timeout: 300000,
-    });
-    logs.push("Dependencies installed.");
-
-    logs.push("Building production bundle...");
-    execSync("npm run build 2>&1", {
-      cwd: installDir, encoding: "utf-8", timeout: 600000,
-    });
-    logs.push("Build complete.");
-
-    logs.push("Restarting service...");
-    execSync(`systemctl restart ${serviceName}`, { encoding: "utf-8", timeout: 30000 });
-
-    logs.push("Update complete!");
-    return NextResponse.json({ success: true, logs });
-  } catch (error) {
-    logs.push(`Error: ${error.message}`);
-    return NextResponse.json({ success: false, logs, error: error.message }, { status: 500 });
+  const result = startUpdate({ mode: "git", ref: BRANCH });
+  if (!result.ok) {
+    return NextResponse.json({ success: false, error: result.error }, { status: result.status });
   }
+
+  return NextResponse.json(
+    {
+      success: true,
+      started: true,
+      branch: BRANCH,
+      message: "Update started. The service will restart when the build finishes.",
+      poll: "/api/setup/update",
+    },
+    { status: 202 }
+  );
+}
+
+/** GET /api/setup/update — progress of the running or last update. */
+export async function GET(request) {
+  if (!(await isAllowed(request))) {
+    return NextResponse.json({ error: "Forbidden: admin role required" }, { status: 403 });
+  }
+  const status = readUpdateStatus();
+  if (!status) return NextResponse.json({ idle: true, logs: [] });
+  return NextResponse.json({
+    idle: false,
+    active: !status.done,
+    ...status,
+    logs: status.log || [],
+  });
 }

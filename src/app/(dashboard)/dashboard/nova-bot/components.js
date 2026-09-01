@@ -227,8 +227,8 @@ export const AGENT_TOOLS = [
   ["gdrive", "cloud", "Google Drive", "List/read Drive files (needs token in Tools settings)"],
   ["homeassistant", "home_iot_device", "Home Assistant", "Smart home states & services"],
   ["x_search", "tag", "X search", "Live X/Twitter search via xAI (needs API key)"],
-  ["github", "code", "GitHub", "List repos, branches, issues, commits"],
-  ["cloudflare", "cloud", "Cloudflare", "List zones, DNS records, workers"],
+  ["github", "code", "GitHub", "Read repos, and create repos, branches, files, issues and PRs (writes need approval)"],
+  ["cloudflare", "cloud", "Cloudflare", "Read zones and workers, and create, update or delete DNS records and purge cache (writes need approval)"],
 ];
 const CAPABILITIES = [
   { key: "parallel", icon: "bolt", label: "Parallel Execution" },

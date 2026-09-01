@@ -222,12 +222,30 @@ export default function ProviderEditModal({
       }
 
       const nextModels = [...allModels.values()];
+
+      // One request for the whole catalogue. This used to fire a POST per
+      // model, so a provider with 76 models opened 76 connections that the
+      // browser then queued six at a time, and Promise.allSettled swallowed
+      // every rejection. The list was also painted before the writes ran, so a
+      // failed save showed the models and then lost them on the next refresh:
+      // "they appear and then disappear". Save first, then show, and say so
+      // when the save fails.
+      if (nextModels.length > 0) {
+        const res = await fetch("/api/models/custom", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            providerAlias,
+            models: nextModels.map((m) => ({ id: m.id, name: m.name || m.id, type: "llm" })),
+          }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || `Could not save the extracted models (HTTP ${res.status})`);
+        }
+      }
+
       setModels(nextModels);
-      await Promise.allSettled(nextModels.map((m) => fetch("/api/models/custom", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ providerAlias, id: m.id, name: m.name || m.id, type: "llm" }),
-      })));
       setModelsLoaded(true);
     } catch (err) {
       setModelsError(err.message || "Failed to extract models");
