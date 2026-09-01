@@ -8,15 +8,36 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { resolveAppRoot } from "./appRoot.js";
 
-export const STATUS_DIR = () => path.join(process.cwd(), ".update-status");
+export const STATUS_DIR = () => path.join(resolveAppRoot(), ".update-status");
 export const STATUS_FILE = () => path.join(STATUS_DIR(), "status.json");
 
-const WORKER = () => path.join(process.cwd(), "src", "lib", "updater", "githubUpdateWorker.js");
+const WORKER = () => path.join(resolveAppRoot(), "src", "lib", "updater", "githubUpdateWorker.js");
 
 // An update older than this is treated as abandoned rather than in-flight, so
 // a worker killed mid-run cannot wedge the button forever.
 const STALE_AFTER_MS = 30 * 60 * 1000;
+
+/**
+ * The environment the update runs in.
+ *
+ * NOT process.env. .next/standalone/server.js assigns
+ * `process.env.__NEXT_PRIVATE_STANDALONE_CONFIG` at runtime, so the running
+ * server carries it even though it never appears in the process's initial
+ * environment. Inheriting it makes `next build` fail with
+ * "TypeError: generate is not a function", which is what killed the update
+ * after everything else about it had been fixed. Anything Next sets for itself
+ * at runtime is stripped before the build sees it.
+ */
+export function buildEnv(env = process.env) {
+  const out = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (key.startsWith("__NEXT_")) continue;
+    out[key] = value;
+  }
+  return out;
+}
 
 export function readUpdateStatus() {
   try {
@@ -91,8 +112,8 @@ export function startUpdate({ mode, ref }) {
   const child = spawn(process.execPath, [WORKER(), `--mode=${mode}`, `--ref=${ref}`], {
     detached: true,
     stdio: "ignore",
-    cwd: process.cwd(),
-    env: process.env,
+    cwd: resolveAppRoot(),
+    env: buildEnv(),
   });
   child.unref();
 

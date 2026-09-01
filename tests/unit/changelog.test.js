@@ -32,10 +32,16 @@ test("the newest release matches the version this build reports", () => {
   assert.equal(newest.version, pkg.version, "CHANGELOG head and package.json disagree");
 });
 
-test("the current release has a date and real entries", () => {
+test("the current release has a date and well-formed entries", () => {
+  // Not a count: a patch release legitimately has two lines. What matters is
+  // that every entry has a type and text, so nothing renders as an empty row.
   const [newest] = parseChangelog(CHANGELOG);
   assert.match(newest.date, /^\d{4}-\d{2}-\d{2}$/, `bad date: ${newest.date}`);
-  assert.ok(newest.changes.length > 10, `only ${newest.changes.length} entries`);
+  assert.ok(newest.changes.length >= 1, "the newest release has no entries at all");
+  for (const c of newest.changes) {
+    assert.ok(c.type, "an entry has no type");
+    assert.ok(c.text && c.text.trim().length > 3, `an entry has no text: ${JSON.stringify(c)}`);
+  }
 });
 
 test("section headings become change types", () => {
