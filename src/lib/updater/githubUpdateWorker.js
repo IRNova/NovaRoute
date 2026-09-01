@@ -24,7 +24,26 @@ const { execSync } = require("child_process");
 
 const REPO = process.env.GITHUB_UPDATE_REPO || "IRNova/NovaRoute";
 const SERVICE = process.env.NOVAROUTE_SERVICE || "novaroute";
-const appDir = process.cwd();
+// Never process.cwd(): the Next standalone server chdir()s into
+// .next/standalone, so a worker spawned from the running app would npm install
+// and build inside the build output, which has its own package.json.
+const appDir = (() => {
+  const markers = ["next.config.mjs", "install.sh", "jsconfig.json"];
+  const looks = (d) => {
+    try {
+      return fs.existsSync(path.join(d, "package.json")) && markers.some((m) => fs.existsSync(path.join(d, m)));
+    } catch { return false; }
+  };
+  if (process.env.INSTALL_DIR && looks(process.env.INSTALL_DIR)) return process.env.INSTALL_DIR;
+  let d = path.resolve(process.cwd());
+  for (let i = 0; i < 8; i += 1) {
+    if (looks(d)) return d;
+    const up = path.dirname(d);
+    if (up === d) break;
+    d = up;
+  }
+  return process.env.INSTALL_DIR || path.resolve(process.cwd());
+})();
 const statusDir = path.join(appDir, ".update-status");
 const statusFile = path.join(statusDir, "status.json");
 const logLines = [];
@@ -70,6 +89,18 @@ function step(name, pct) {
   writeStatus({ step: name, pct, done: false, error: null });
 }
 
+// Next assigns __NEXT_PRIVATE_* into process.env at runtime, so a build that
+// inherits this process's environment fails. Strip them here too: the worker
+// can also be started by hand.
+function cleanEnv(extra = {}) {
+  const out = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (k.startsWith("__NEXT_")) continue;
+    out[k] = v;
+  }
+  return { ...out, ...extra };
+}
+
 function run(cmd, opts = {}) {
   logLines.push(`$ ${cmd}`);
   let out;
@@ -80,6 +111,7 @@ function run(cmd, opts = {}) {
       timeout: 900000,
       maxBuffer: 64 * 1024 * 1024,
       stdio: ["ignore", "pipe", "pipe"],
+      env: cleanEnv(),
       ...opts,
     });
   } catch (err) {
@@ -188,11 +220,20 @@ function dispatchRestart() {
     if (mode === "git") updateFromGit(ref);
     else updateFromTag(ref);
 
-    // FULL install: the live box has had its devDependencies pruned, and the
-    // build needs tailwindcss/postcss back. --omit=dev here is what broke the
-    // previous updater.
+    // FULL install: the live box has had its devDependencies pruned and the
+    // build needs them back.
+    //
+    // Dropping --omit=dev is not enough. This worker is spawned by the running
+    // service, so it inherits NODE_ENV=production from the unit's environment,
+    // and npm skips devDependencies under that on its own: the step reported
+    // "up to date in 656ms" and installed nothing, then the build failed for
+    // want of the very tools this step exists to restore. Ask for them
+    // explicitly AND neutralise NODE_ENV for this one command. next build sets
+    // its own production mode regardless.
     step("install", 55);
-    run("npm install --no-audit --no-fund");
+    run("npm install --include=dev --no-audit --no-fund", {
+      env: cleanEnv({ NODE_ENV: "development" }),
+    });
 
     step("build", 75);
     run("npm run build");

@@ -2,16 +2,18 @@ import { NextResponse } from "next/server";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { execSync } from "node:child_process";
+import { resolveAppRoot } from "@/lib/updater/appRoot.js";
 
 export const dynamic = "force-dynamic";
 
 const REPO = process.env.GITHUB_UPDATE_REPO || "IRNova/NovaRoute";
 const BRANCH = process.env.NOVAROUTE_UPDATE_BRANCH || "main";
 
-// The service runs with WorkingDirectory=<install dir>, so cwd is the checkout.
-// INSTALL_DIR stays as an override for anything launched from elsewhere.
+// The service sets WorkingDirectory=<install dir>, but the Next standalone
+// server chdir()s into .next/standalone on boot, so cwd is the build output.
+// Reporting from there said "not a git checkout" on a perfectly good install.
 function installDir() {
-  return process.env.INSTALL_DIR || process.cwd();
+  return resolveAppRoot();
 }
 
 function git(args, dir) {
