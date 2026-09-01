@@ -174,11 +174,22 @@ export function buildFinalToolDefinitions(agent) {
     defs.push({ type: "function", function: { name: "gh_list_branches", description: "List branches of a GitHub repository.", parameters: { type: "object", properties: ghRepo, required: ghRepoReq } } });
     defs.push({ type: "function", function: { name: "gh_list_issues", description: "List issues of a GitHub repository.", parameters: { type: "object", properties: { ...ghRepo, state: { type: "string" }, per_page: { type: "integer" } }, required: ghRepoReq } } });
     defs.push({ type: "function", function: { name: "gh_list_commits", description: "List recent commits of a GitHub repository.", parameters: { type: "object", properties: { ...ghRepo, sha: { type: "string" }, per_page: { type: "integer" } }, required: ghRepoReq } } });
+    // Writes. Each one waits for the admin to approve it, exactly like the
+    // terminal tool: a PAT can delete a repository as easily as create one.
+    defs.push({ type: "function", function: { name: "gh_create_repo", description: "Create a new GitHub repository for the connected account. The human admin must approve before it is created.", parameters: { type: "object", properties: { name: { type: "string", description: "Repository name." }, description: { type: "string" }, private: { type: "boolean", description: "Defaults to true." }, auto_init: { type: "boolean", description: "Create an initial commit with a README. Defaults to true." } }, required: ["name"] } } });
+    defs.push({ type: "function", function: { name: "gh_create_issue", description: "Open an issue on a GitHub repository. Requires admin approval.", parameters: { type: "object", properties: { ...ghRepo, title: { type: "string" }, body: { type: "string" }, labels: { type: "array", items: { type: "string" } } }, required: [...ghRepoReq, "title"] } } });
+    defs.push({ type: "function", function: { name: "gh_create_branch", description: "Create a branch from another branch's head. Requires admin approval.", parameters: { type: "object", properties: { ...ghRepo, branch: { type: "string" }, from: { type: "string", description: "Base branch, defaults to main." } }, required: [...ghRepoReq, "branch"] } } });
+    defs.push({ type: "function", function: { name: "gh_put_file", description: "Create or replace a file and commit it. This is how you write code to a repository. Requires admin approval.", parameters: { type: "object", properties: { ...ghRepo, path: { type: "string", description: "Path inside the repository, e.g. src/index.js" }, content: { type: "string", description: "Full UTF-8 file content." }, message: { type: "string", description: "Commit message." }, branch: { type: "string" } }, required: [...ghRepoReq, "path", "content"] } } });
+    defs.push({ type: "function", function: { name: "gh_create_pr", description: "Open a pull request. Requires admin approval.", parameters: { type: "object", properties: { ...ghRepo, title: { type: "string" }, head: { type: "string", description: "Branch containing the changes." }, base: { type: "string", description: "Target branch, defaults to main." }, body: { type: "string" } }, required: [...ghRepoReq, "title", "head"] } } });
   }
   if (has("cloudflare")) {
     defs.push({ type: "function", function: { name: "cf_list_zones", description: "List Cloudflare zones (domains).", parameters: { type: "object", properties: { per_page: { type: "integer" } } } } });
     defs.push({ type: "function", function: { name: "cf_list_dns", description: "List DNS records for a Cloudflare zone.", parameters: { type: "object", properties: { zone_id: { type: "string" }, type: { type: "string" }, name: { type: "string" }, per_page: { type: "integer" } }, required: ["zone_id"] } } });
     defs.push({ type: "function", function: { name: "cf_list_workers", description: "List Cloudflare Workers.", parameters: { type: "object", properties: { per_page: { type: "integer" } } } } });
+    defs.push({ type: "function", function: { name: "cf_create_dns", description: "Create a DNS record in a Cloudflare zone. Requires admin approval.", parameters: { type: "object", properties: { zone_id: { type: "string" }, type: { type: "string", description: "A, AAAA, CNAME, TXT, MX, NS, SRV or CAA." }, name: { type: "string" }, content: { type: "string" }, ttl: { type: "integer", description: "1 means automatic." }, proxied: { type: "boolean" } }, required: ["zone_id", "type", "name", "content"] } } });
+    defs.push({ type: "function", function: { name: "cf_update_dns", description: "Update an existing DNS record. Omitted fields keep their current value. Requires admin approval.", parameters: { type: "object", properties: { zone_id: { type: "string" }, record_id: { type: "string" }, type: { type: "string" }, name: { type: "string" }, content: { type: "string" }, ttl: { type: "integer" }, proxied: { type: "boolean" } }, required: ["zone_id", "record_id"] } } });
+    defs.push({ type: "function", function: { name: "cf_delete_dns", description: "Delete a DNS record. Destructive: this can take a site offline. Requires admin approval.", parameters: { type: "object", properties: { zone_id: { type: "string" }, record_id: { type: "string" } }, required: ["zone_id", "record_id"] } } });
+    defs.push({ type: "function", function: { name: "cf_purge_cache", description: "Purge a zone's cache, either specific URLs or everything. Requires admin approval.", parameters: { type: "object", properties: { zone_id: { type: "string" }, files: { type: "array", items: { type: "string" }, description: "Full URLs. Omit to purge everything." } }, required: ["zone_id"] } } });
   }
   return defs;
 }
@@ -224,6 +235,15 @@ export async function executeFinalToolCall(call, meta = {}) {
       case "cf_list_zones": return await integ.cfListZones(args);
       case "cf_list_dns": return await integ.cfListDns(args);
       case "cf_list_workers": return await integ.cfListWorkers(args);
+      case "gh_create_repo": return await integ.ghCreateRepo(args, meta);
+      case "gh_create_issue": return await integ.ghCreateIssue(args, meta);
+      case "gh_create_branch": return await integ.ghCreateBranch(args, meta);
+      case "gh_put_file": return await integ.ghPutFile(args, meta);
+      case "gh_create_pr": return await integ.ghCreatePr(args, meta);
+      case "cf_create_dns": return await integ.cfCreateDns(args, meta);
+      case "cf_update_dns": return await integ.cfUpdateDns(args, meta);
+      case "cf_delete_dns": return await integ.cfDeleteDns(args, meta);
+      case "cf_purge_cache": return await integ.cfPurgeCache(args, meta);
       default: return null;
     }
   } catch (e) {

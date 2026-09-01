@@ -61,6 +61,10 @@ const ALWAYS_PROTECTED = [
   // /api/setup prefix, so without this it was reachable unauthenticated (the
   // route's own localhost check was the only gate).
   "/api/setup/update",
+  // Same public-prefix problem: it reports the deployed commit, the branch and
+  // whether the working tree is dirty. Host fingerprinting for anyone who
+  // asks, and the callers are all authenticated panel surfaces.
+  "/api/setup/check-update",
   "/api/settings/database",
   "/api/version/shutdown",
   "/api/version/update",

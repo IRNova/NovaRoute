@@ -351,3 +351,51 @@ export function getCapabilitiesForModel(provider, model) {
   // 4. Floor
   return { ...DEFAULT_CAPABILITIES };
 }
+
+/**
+ * Did anything actually describe this model, or did it only hit the floor?
+ *
+ * getCapabilitiesForModel always merges over DEFAULT_CAPABILITIES, so its
+ * contextWindow is never empty: an unknown model, and even a TTS voice id,
+ * comes back claiming 200000 tokens. Callers that want to report a real limit
+ * need to tell a match from the floor.
+ */
+export function hasKnownCapabilities(provider, model) {
+  if (!model) return false;
+  const baseModel = model.includes("/") ? model.split("/").pop() : model;
+  if (provider) {
+    const providerCaps = PROVIDER_CAPABILITIES[provider];
+    if (providerCaps?.[model] || providerCaps?.[baseModel]) return true;
+  }
+  if (MODEL_CAPABILITIES[baseModel] || MODEL_CAPABILITIES[model]) return true;
+  for (const { pattern } of PATTERN_CAPABILITIES) {
+    if (matchPattern(pattern, baseModel) || matchPattern(pattern, model)) return true;
+  }
+  return false;
+}
+
+/**
+ * The context window for a model, or null when nothing knows it.
+ *
+ * Order: the provider's own registry entry (it ships the model list, so it is
+ * the most specific source), then the capability tables when they actually
+ * matched. Never the floor - a made-up number is worse than "unknown", because
+ * the dashboard divides usage by it and shows a percentage.
+ */
+export function resolveContextWindow(provider, model, registryEntry) {
+  const models = Array.isArray(registryEntry?.models) ? registryEntry.models : [];
+  const base = model && model.includes("/") ? model.split("/").pop() : model;
+  for (const m of models) {
+    if (m?.id !== model && m?.id !== base) continue;
+    // Both field names are in use across the registry: contextLength in 79
+    // files, contextWindow in 7.
+    const v = m.contextWindow ?? m.contextLength ?? null;
+    if (typeof v === "number" && v > 0) return v;
+    break;
+  }
+  if (hasKnownCapabilities(provider, model)) {
+    const caps = getCapabilitiesForModel(provider, model);
+    if (typeof caps?.contextWindow === "number" && caps.contextWindow > 0) return caps.contextWindow;
+  }
+  return null;
+}

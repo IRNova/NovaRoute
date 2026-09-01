@@ -6,6 +6,7 @@ import Button from "@/shared/components/Button";
 import Drawer from "@/shared/components/Drawer";
 import Pagination from "@/shared/components/Pagination";
 import { cn } from "@/shared/utils/cn";
+import { translate } from "@/i18n/runtime";
 import { AI_PROVIDERS, getProviderByAlias } from "@/shared/constants/providers";
 
 let providerNameCache = null;
@@ -117,19 +118,25 @@ export default function RequestDetailsTab() {
     startDate: "",
     endDate: ""
   });
+  const [includeHistorical, setIncludeHistorical] = useState(false);
+  const [historicalCount, setHistoricalCount] = useState(0);
 
   const fetchProviders = useCallback(async () => {
     try {
-      const res = await fetch("/api/usage/providers");
+      // "current" hides providers that are no longer installed; the toggle
+      // below brings their history back rather than pretending it never
+      // happened.
+      const res = await fetch(`/api/usage/providers?scope=${includeHistorical ? "all" : "current"}`);
       const data = await res.json();
       setProviders(data.providers || []);
+      setHistoricalCount(data.historicalCount || 0);
 
       const cache = await fetchProviderNames();
       setProviderNameCache(cache.providerNameCache);
     } catch (error) {
       console.error("Failed to fetch providers:", error);
     }
-  }, []);
+  }, [includeHistorical]);
 
   const fetchDetails = useCallback(async () => {
     setLoading(true);
@@ -200,9 +207,28 @@ export default function RequestDetailsTab() {
               {providers.map((provider) => (
                 <option key={provider.id} value={provider.id}>
                   {provider.name}
+                  {provider.connected ? "" : ` (${translate("no longer installed")})`}
                 </option>
               ))}
             </select>
+            {historicalCount > 0 && !includeHistorical && (
+              <button
+                type="button"
+                onClick={() => setIncludeHistorical(true)}
+                className="text-start text-xs text-text-muted hover:text-text-main transition-colors"
+              >
+                {`${translate("Also show")} ${historicalCount} ${translate("providers you no longer have")}`}
+              </button>
+            )}
+            {includeHistorical && (
+              <button
+                type="button"
+                onClick={() => { setIncludeHistorical(false); setFilters((f) => ({ ...f, provider: "" })); }}
+                className="text-start text-xs text-text-muted hover:text-text-main transition-colors"
+              >
+                {translate("Show only providers I have now")}
+              </button>
+            )}
           </div>
           
           <div className="flex min-w-0 flex-col gap-2">

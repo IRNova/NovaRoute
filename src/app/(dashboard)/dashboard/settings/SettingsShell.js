@@ -18,6 +18,9 @@ const TABS = [
   { label: "Appearance", value: "appearance", icon: "palette" },
   { label: "AI", value: "ai", icon: "psychology" },
   { label: "Advanced", value: "advanced", icon: "tune" },
+  // Was not in this list at all, so the page holding the update button could
+  // only be reached by typing its URL.
+  { label: "System & Update", value: "system", icon: "system_update" },
 ];
 
 export const SettingsContext = createContext(null);

@@ -17,6 +17,10 @@ function getAuthGroup(providerId, connection = null) {
       if (FREE_PROVIDERS[providerId]) return "free";
       return "oauth";
     }
+    // The installer connects keyless providers with authType "none", which
+    // matched no batch mode at all, so "test the free providers" tested
+    // nothing. They are the free group.
+    if (connection.authType === "none") return "free";
     return connection.authType;
   }
   
@@ -91,6 +95,7 @@ export async function POST(request) {
           connectionName: conn.name || conn.email || conn.provider,
           authType: conn.authType || getAuthGroup(conn.provider, conn),
           valid: data.valid,
+          unknown: data.unknown === true || data.valid === null,
           latencyMs: data.latencyMs || 0,
           error: data.error || null,
           diagnosis: data.diagnosis || null,
@@ -120,8 +125,11 @@ export async function POST(request) {
       testedAt: new Date().toISOString(),
       summary: {
         total: results.length,
-        passed: results.filter((r) => r.valid).length,
-        failed: results.filter((r) => !r.valid).length,
+        passed: results.filter((r) => r.valid === true).length,
+        // "no probe available" is reported separately; counting it as a failure
+        // is what made the batch test look like everything was broken.
+        failed: results.filter((r) => r.valid === false).length,
+        unknown: results.filter((r) => r.valid === null || r.unknown).length,
       },
     });
   } catch (error) {

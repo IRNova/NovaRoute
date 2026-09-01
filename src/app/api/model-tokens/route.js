@@ -3,11 +3,11 @@ import { getAdapter } from "@/lib/db/driver.js";
 import { parseJson } from "@/lib/db/helpers/jsonCol.js";
 import { getProviderConnections } from "@/lib/db/repos/connectionsRepo.js";
 import { getSettings } from "@/lib/db/repos/settingsRepo.js";
-import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import { resolveContextWindow } from "open-sse/providers/capabilities.js";
+import REGISTRY from "open-sse/providers/registry/index.js";
 
 export const dynamic = "force-dynamic";
 
-const DEFAULT_CONTEXT_WINDOW = 4096;
 const MODEL_TOKEN_LIMITS = {
   openai: {
     "gpt-4o": 128000,
@@ -67,12 +67,22 @@ const MODEL_TOKEN_LIMITS = {
   },
 };
 
+const REGISTRY_BY_ID = new Map(REGISTRY.map((r) => [r.id, r]));
+
+/**
+ * The context window for a model, or 0 when nothing actually knows it.
+ *
+ * This used to ask getCapabilitiesForModel and trust whatever came back. That
+ * function merges over a floor of 200000, so it never returns nothing: every
+ * unrecognised model was reported as a 200000-token model, including TTS voice
+ * ids. Meanwhile the registry's own 848 per-model context values were never
+ * read at all. Now the registry answers first, the capability tables answer
+ * only when they genuinely matched, and this table is the last resort.
+ */
 function getTokenLimit(provider, modelId) {
   try {
-    const caps = getCapabilitiesForModel(provider, modelId);
-    if (caps?.contextWindow && caps.contextWindow > 0) {
-      return caps.contextWindow;
-    }
+    const fromCatalog = resolveContextWindow(provider, modelId, REGISTRY_BY_ID.get(provider));
+    if (fromCatalog) return fromCatalog;
   } catch {}
 
   const providerLimits = MODEL_TOKEN_LIMITS[provider];
@@ -190,6 +200,9 @@ export async function GET() {
         model,
         provider,
         tokenLimit,
+        // Lets the dashboard show "unknown" instead of a fabricated percentage
+        // against a number nobody actually knows.
+        tokenLimitKnown: tokenLimit > 0,
         tokensUsed: usage.totalTokens,
         promptTokens: usage.promptTokens,
         completionTokens: usage.completionTokens,

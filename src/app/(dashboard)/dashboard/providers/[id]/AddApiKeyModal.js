@@ -214,7 +214,9 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         defaultModel: isCompatible ? formData.defaultModel.trim() : undefined,
         priority: formData.priority,
         proxyPoolId: formData.proxyPoolId === NONE_PROXY_POOL_VALUE ? null : formData.proxyPoolId,
-        testStatus: isValid ? "active" : "unknown",
+        // "untested" is the spelling the status mappers and the test
+        // route use for "we have no verdict".
+        testStatus: isValid ? "active" : "untested",
         authType: isCookie ? "cookie" : undefined,
         providerSpecificData: credentialData || buildProviderSpecificData()
       });
@@ -223,16 +225,24 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
       // survive page refresh and appear on the provider detail page.
       if (models.length > 0 && !isCompatible) {
         const providerAlias = getProviderAlias(provider);
-        for (const m of models) {
-          try {
-            await fetch("/api/models/custom", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ providerAlias, id: m.id, type: "llm" }),
-            });
-          } catch (saveErr) {
-            console.log("Failed to save extracted model:", saveErr.message);
+        // One batch request. This was a sequential await per model, so saving
+        // a 76-model provider meant 76 round-trips one after another, and
+        // every failure went to the console where nobody sees it.
+        try {
+          const res = await fetch("/api/models/custom", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              providerAlias,
+              models: models.map((m) => ({ id: m.id, name: m.name || m.id, type: "llm" })),
+            }),
+          });
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            setError(data.error || `Saved the connection, but could not save its models (HTTP ${res.status})`);
           }
+        } catch (saveErr) {
+          setError(`Saved the connection, but could not save its models: ${saveErr.message}`);
         }
         if (onBulkDone) onBulkDone();
       }

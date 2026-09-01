@@ -63,7 +63,11 @@ PUBLIC.md
 Thanks.md
 PUBLIC.en.md
 PR/*
-package-lock.json
+# package-lock.json is COMMITTED on purpose: install.sh and the in-panel
+# updater both run a fresh `npm install` on the target box, so without a
+# lockfile every install and every update resolves its own dependency tree.
+# That is how "it worked yesterday" installs happen, and it puts whatever
+# upstream published in the last hour straight onto user servers.
 
 
 #Ignore vscode AI rules
@@ -112,3 +116,6 @@ logis.txt
 tmp-passthrough.json
 new/
 *.tar.gz
+
+# Self-update progress written by the updater worker (runtime state, per host).
+.update-status/

@@ -9,6 +9,7 @@ import DonateModal from "@/shared/components/DonateModal";
 import { useTheme } from "@/shared/hooks/useTheme";
 import { useSidebarSearchStore } from "@/store/sidebarSearchStore";
 import { useNotificationStore } from "@/store/notificationStore";
+import { formatActionItem } from "@/shared/utils/actionItems";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS } from "@/shared/constants/config";
 import { MEDIA_PROVIDER_KINDS, AI_PROVIDERS } from "@/shared/constants/providers";
 import { getProviderIconSrc } from "@/shared/utils/providerIcon";
@@ -465,11 +466,38 @@ function LanguageSwitcher({ locale, onSwitch }) {
   );
 }
 
+const ACTION_ITEMS_POLL_MS = 60000;
+
 function NotificationBell({ notifRef, notifOpen, setNotifOpen }) {
   const notifications = useNotificationStore((s) => s.notifications);
   const removeNotification = useNotificationStore((s) => s.removeNotification);
   const clearAll = useNotificationStore((s) => s.clearAll);
-  const count = notifications.length;
+  const alerts = useNotificationStore((s) => s.alerts);
+  const setAlerts = useNotificationStore((s) => s.setAlerts);
+  const count = notifications.length + alerts.length;
+
+  // Standing warnings used to be a stack of banners in the middle of the
+  // dashboard home, next to a bell that never showed them. They belong in one
+  // place, and this is the one that is on every page.
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch("/api/dashboard/action-items", { cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) setAlerts(data.items);
+      } catch {
+        /* a transient failure must not clear standing warnings */
+      }
+    };
+    load();
+    const timer = setInterval(load, ACTION_ITEMS_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [setAlerts]);
   const [shaking, setShaking] = useState(false);
   const prevCount = useRef(count);
 
@@ -518,7 +546,7 @@ function NotificationBell({ notifRef, notifOpen, setNotifOpen }) {
         <div className="absolute top-full end-0 mt-2 w-80 max-h-[70vh] flex flex-col rounded-2xl border border-border bg-elevated shadow-2xl z-50 overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle">
             <h3 className="text-sm font-bold text-text-main">{translate("Notifications")}</h3>
-            {count > 0 && (
+            {notifications.length > 0 && (
               <button
                 onClick={() => { clearAll(); setNotifOpen(false); }}
                 className="text-xs text-text-muted hover:text-red-500 transition-colors"
@@ -536,6 +564,25 @@ function NotificationBell({ notifRef, notifOpen, setNotifOpen }) {
               </div>
             ) : (
               <div className="py-1">
+                {alerts.map((a) => (
+                  <a
+                    key={a.id}
+                    href={a.href}
+                    onClick={() => setNotifOpen(false)}
+                    className="flex items-start gap-3 px-4 py-3 hover:bg-surface-2 transition-colors"
+                  >
+                    <span className={`material-symbols-outlined text-[18px] mt-0.5 shrink-0 ${a.type === "error" ? "text-red-500" : "text-amber-500"}`}>
+                      {a.type === "error" ? "error" : "warning"}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs text-text-muted whitespace-pre-wrap break-words leading-relaxed" dir="auto">
+                        {formatActionItem(a, translate)}
+                      </p>
+                      <p className="text-[10px] text-text-muted/60 mt-1">{translate("Needs attention")}</p>
+                    </div>
+                    <span className="material-symbols-outlined text-[16px] opacity-70 shrink-0">chevron_left</span>
+                  </a>
+                ))}
                 {notifications.map((n) => (
                   <div
                     key={n.id}

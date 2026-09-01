@@ -100,7 +100,7 @@ function ModelRow({ entry, isExpanded, onToggle }) {
           </div>
           <div className="flex items-center gap-3 mt-0.5">
             <span className="text-xs text-text-muted">
-              {translate("Limit")}: {formatTokenCount(entry.tokenLimit)}
+              {translate("Limit")}: {entry.tokenLimit > 0 ? formatTokenCount(entry.tokenLimit) : translate("unknown")}
             </span>
             <span className="text-xs text-text-muted">
               {formatTokenCount(entry.tokensUsed)} {translate("used")}
@@ -123,7 +123,13 @@ function ModelRow({ entry, isExpanded, onToggle }) {
           </div>
         </div>
 
-        <UsageBar percentage={entry.usagePercentage} />
+        {entry.tokenLimit > 0 ? (
+          <UsageBar percentage={entry.usagePercentage} />
+        ) : (
+          // No credible context window for this model, so there is no honest
+          // percentage to draw. A bar against a made-up limit is worse than none.
+          <span className="w-24 shrink-0 text-right text-xs text-text-muted">{translate("no limit data")}</span>
+        )}
 
         <span className="material-symbols-outlined text-[18px] text-text-muted transition-transform duration-200 shrink-0" style={{ transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)" }}>
           expand_more
@@ -136,7 +142,7 @@ function ModelRow({ entry, isExpanded, onToggle }) {
             <div>
               <p className="text-[11px] text-text-muted uppercase tracking-wider">{translate("Token Limit")}</p>
               <p className="text-sm font-semibold text-text-main mt-0.5">
-                {entry.tokenLimit.toLocaleString()}
+                {entry.tokenLimit > 0 ? entry.tokenLimit.toLocaleString() : translate("unknown")}
               </p>
             </div>
             <div>
@@ -161,9 +167,9 @@ function ModelRow({ entry, isExpanded, onToggle }) {
               <p className="text-[11px] text-text-muted uppercase tracking-wider">{translate("Remaining")}</p>
               <p className={cn(
                 "text-sm font-semibold mt-0.5",
-                entry.remaining === 0 ? "text-red-500" : "text-emerald-500"
+                entry.tokenLimit <= 0 ? "text-text-muted" : entry.remaining === 0 ? "text-red-500" : "text-emerald-500"
               )}>
-                {entry.remaining.toLocaleString()}
+                {entry.tokenLimit > 0 ? entry.remaining.toLocaleString() : translate("unknown")}
               </p>
             </div>
             <div>
@@ -181,7 +187,7 @@ function ModelRow({ entry, isExpanded, onToggle }) {
             <div>
               <p className="text-[11px] text-text-muted uppercase tracking-wider">{translate("Usage")}</p>
               <p className="text-sm font-semibold text-text-main mt-0.5">
-                {entry.usagePercentage}%
+                {entry.tokenLimit > 0 ? `${entry.usagePercentage}%` : translate("unknown")}
               </p>
             </div>
           </div>

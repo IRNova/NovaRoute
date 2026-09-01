@@ -141,7 +141,17 @@ const CHANNEL_CATALOG = [
     icon: "code",
     color: "#f0f0f0",
     wired: "github",
-    desc: "Create repos, push code, manage projects.",
+    desc: "Create repos, commit files, open issues and pull requests.",
+    // What the agent can actually do once this is connected. The page used to
+    // promise "push code" while only read tools existed.
+    grants: [
+      "Read repos, branches, issues and commits",
+      "Create a repository",
+      "Create a branch",
+      "Commit a file",
+      "Open an issue",
+      "Open a pull request",
+    ],
     fields: [],
   },
   {
@@ -150,7 +160,14 @@ const CHANNEL_CATALOG = [
     icon: "cloud",
     color: "#F38020",
     wired: "cloudflare",
-    desc: "DNS, Workers, Pages, R2, KV, D1.",
+    desc: "Read zones and Workers, manage DNS records, purge cache.",
+    grants: [
+      "List zones, DNS records and Workers",
+      "Create a DNS record",
+      "Update a DNS record",
+      "Delete a DNS record",
+      "Purge the cache",
+    ],
     fields: [],
   },
 ];
@@ -495,6 +512,19 @@ function ChannelCard({ ch, enabled, running, configured, toggling, onToggle, onE
       </div>
 
       <p className="line-clamp-2 min-h-[32px] text-xs leading-5 text-text-muted">{translate(ch.desc)}</p>
+
+      {/* What connecting this actually grants the agent. Stated per app so the
+          card cannot drift back into promising capability that is not wired. */}
+      {ch.grants?.length > 0 && (
+        <ul className="mt-2 flex flex-col gap-1">
+          {ch.grants.map((g) => (
+            <li key={g} className="flex items-start gap-1.5 text-[11px] leading-4 text-text-muted">
+              <span className="material-symbols-outlined mt-px text-[13px] text-emerald-500">check</span>
+              <span>{translate(g)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
 
       {/* footer */}
       <div className="mt-auto flex items-center justify-between gap-2 border-t border-border pt-3">
