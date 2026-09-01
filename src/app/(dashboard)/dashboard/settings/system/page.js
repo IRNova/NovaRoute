@@ -109,7 +109,7 @@ export default function SystemSettingsPage() {
               <p className="text-xl font-mono font-bold">{version}</p>
             </div>
             <div className="text-right">
-              <p className="text-sm text-gray-500">Status</p>
+              <p className="text-sm text-gray-500">{translate("Status")}</p>
               {updateInfo?.updateAvailable ? (
                 <span className="inline-flex items-center gap-1 px-2 py-1 bg-amber-100 text-amber-700 rounded-full text-sm">
                   <span className="w-2 h-2 bg-amber-500 rounded-full"></span>
@@ -123,6 +123,18 @@ export default function SystemSettingsPage() {
               )}
             </div>
           </div>
+
+          {/* What the update actually brings: the new version, then the notes. */}
+          {updateInfo?.updateAvailable && updateInfo?.latestVersion && (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg bg-indigo-50 p-3 text-sm">
+              <span className="font-semibold text-indigo-700">
+                {version} → {updateInfo.latestVersion}
+              </span>
+              <a href="/dashboard/changelog" className="ms-auto text-xs text-indigo-600 underline">
+                {translate("Release notes")}
+              </a>
+            </div>
+          )}
 
           {/* Latest commit info */}
           {updateInfo?.commitSha && (

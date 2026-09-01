@@ -3779,5 +3779,8 @@
   "Try routing strategies before you ship them": "آزمودن راهبردهای مسیریابی پیش از استفادهٔ واقعی",
   "Web search, crawl and extract providers": "ارائه‌دهنده‌های جست‌وجو، خزش و استخراج وب",
   "Fire events to your own endpoints": "ارسال رویدادها به نقطه‌های پایانی خودتان",
-  "Request transformation pipeline": "خط پردازش دگرگون‌سازی درخواست"
+  "Request transformation pipeline": "خط پردازش دگرگون‌سازی درخواست",
+  "Release notes": "یادداشت‌های انتشار",
+  "Could not load the changelog for this build.": "یادداشت‌های این نسخه بارگذاری نشد.",
+  "No release notes shipped with this build.": "برای این نسخه یادداشت انتشاری همراه نشده است."
 }

@@ -44,6 +44,7 @@ export async function GET() {
     const dirty = isGitCheckout ? git("status --porcelain", dir).length > 0 : false;
 
     let latestSha = "";
+    let latestVersion = "";
     let commitMessage = "";
     let commitDate = "";
     let updateAvailable = false;
@@ -63,6 +64,21 @@ export async function GET() {
       } else {
         checkError = `GitHub returned ${res.status}`;
       }
+
+      // The version the update would bring, read from the branch's own
+      // package.json, so the panel can say "1.1.0 -> 1.2.0" instead of only
+      // showing two commit hashes.
+      if (updateAvailable) {
+        try {
+          const pkgRes = await fetch(
+            `https://raw.githubusercontent.com/${REPO}/${BRANCH}/package.json`,
+            { signal: AbortSignal.timeout(8000), headers: { "User-Agent": "NovaRoute-Updater" } }
+          );
+          if (pkgRes.ok) latestVersion = (await pkgRes.json())?.version || "";
+        } catch {
+          // Version is a nicety; the sha comparison already decided.
+        }
+      }
     } catch (err) {
       checkError = `Could not reach GitHub: ${err.message}`;
     }
@@ -70,7 +86,9 @@ export async function GET() {
     return NextResponse.json({
       current: currentVersion,
       currentSha: localSha,
-      latest: updateAvailable ? `${currentVersion}+${latestSha}` : currentVersion,
+      latestVersion: latestVersion || null,
+      versionChanged: Boolean(latestVersion && latestVersion !== currentVersion),
+      latest: updateAvailable ? `${latestVersion || currentVersion}+${latestSha}` : currentVersion,
       updateAvailable,
       commitSha: latestSha,
       commitMessage,
