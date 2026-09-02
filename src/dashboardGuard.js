@@ -46,6 +46,12 @@ const PUBLIC_API_PATHS = [
   // they are authenticated inside the handler via the
   // X-Telegram-Bot-Api-Secret-Token header instead.
   "/api/dashboard/nova/telegram/webhook",
+  // Instagram deliveries, for the same reason: Meta cannot carry a dashboard
+  // session. Telegram was on this list and Instagram was not, so every Meta
+  // delivery was refused with 401 before reaching the handler, which is why
+  // Telegram worked and Instagram did not. The handler verifies the Meta
+  // signature itself and refuses outright when no app secret is configured.
+  "/api/dashboard/nova/instagram/webhook",
   // Inbound messages for generic webhook channels: authenticated inside the
   // handler with the channel's own secret (X-Channel-Secret).
   "/api/channels/webhook",
