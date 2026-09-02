@@ -30,15 +30,21 @@ export async function POST(request) {
   try {
     const rawBody = await request.text();
 
-    // Verify signature if app secret is configured
+    // The signature is the ONLY thing standing in front of this endpoint: it is
+    // on the guard's public list, because Meta cannot carry a dashboard
+    // session. Verifying only "if an app secret is configured" therefore fails
+    // open, and this route hands its payload straight to the agent.
     const config = await getNovaInstagramConfig();
-    if (config.appSecret) {
-      const signature = request.headers.get("x-hub-signature-256");
-      const { verifyIgSignature } = await import("@/lib/nova/instagram.js");
-      const valid = await verifyIgSignature(rawBody, signature);
-      if (!valid) {
-        return NextResponse.json({ error: "Invalid signature" }, { status: 403 });
-      }
+    if (!config.appSecret) {
+      return NextResponse.json(
+        { error: "Instagram app secret is not configured; refusing unverified webhook deliveries." },
+        { status: 503 }
+      );
+    }
+    const signature = request.headers.get("x-hub-signature-256");
+    const { verifyIgSignature } = await import("@/lib/nova/instagram.js");
+    if (!(await verifyIgSignature(rawBody, signature))) {
+      return NextResponse.json({ error: "Invalid signature" }, { status: 403 });
     }
 
     const event = JSON.parse(rawBody);
@@ -48,7 +54,8 @@ export async function POST(request) {
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    // Never let webhook processing throw
+    // Never let webhook processing throw, but do not answer OK to something
+    // that never got past verification.
     return NextResponse.json({ ok: true });
   }
 }

@@ -22,5 +22,18 @@ jobs:
         run: npx eslint .
         continue-on-error: true
 
+      # The unit tests exist to stop specific regressions coming back: a
+      # provider silently unregistered, the connection test calling working
+      # providers broken, a page with no link to it, the updater trusting the
+      # working directory. Without this step they guard nothing.
+      - name: Unit tests
+        run: npm run test:unit
+
+      # The registry index is generated. A provider added without regenerating
+      # it is invisible to the dashboard and the gateway, which is how eleven
+      # of them went missing.
+      - name: Provider registry is in sync
+        run: node scripts/generate-registry-index.mjs --check
+
       - name: Build
         run: npm run build
