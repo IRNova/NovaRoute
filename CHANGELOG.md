@@ -1,3 +1,24 @@
+# v1.1.2 (2026-09-01)
+
+## Fixes
+- **Nova Bot**: Instagram never received anything. The Telegram webhook was on
+  the list of paths the request guard lets through, because a messaging
+  platform cannot carry a dashboard session, and the Instagram one was not, so
+  every delivery from Meta was refused before it reached the handler. That is
+  why Telegram worked and Instagram did not.
+
+## Internal
+- CI now runs the unit test suite and checks that the provider registry index
+  matches the providers on disk. Neither was running, so nothing stopped a
+  regression or an unregistered provider from being merged.
+- Removed three directory trees that were byte-for-byte duplicates of their
+  own parents (`cli/cli`, `assets/assets`, `.github/.github`), 35 files that
+  nothing referenced. The copies under `.github/.github` were never read by
+  GitHub at all.
+
+## Security
+- Hardening of the Instagram webhook. Updating is recommended.
+
 # v1.1.1 (2026-09-01)
 
 ## Fixes

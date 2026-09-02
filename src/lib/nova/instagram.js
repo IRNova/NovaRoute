@@ -3,7 +3,7 @@
 // الگوی مشابه userbot.js — draft cards با تأیید روی ربات تلگرام
 // Flow: DM میاد → AI جواب آماده می‌کنه → کارت draft با ✅❌ روی تلگرام → تأیید → ارسال
 
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { makeKv } from "@/lib/db/helpers/kvStore.js";
 import {
   getNovaTelegramConfig,
@@ -103,10 +103,12 @@ export async function sendInstagramImage(userId, imageUrl, caption = "") {
 // ── Webhook verification (GET handler) ──
 
 export function verifyIgWebhook(mode, token, verifyToken) {
-  if (mode === "subscribe" && token === verifyToken) {
-    return true;
-  }
-  return false;
+  if (mode !== "subscribe" || !token || !verifyToken) return false;
+  // Constant time, so the handshake cannot be probed a character at a time.
+  const a = Buffer.from(String(token));
+  const b = Buffer.from(String(verifyToken));
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
 }
 
 // ── Webhook signature verification (X-Hub-Signature-256) ──
