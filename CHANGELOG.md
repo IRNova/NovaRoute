@@ -1,3 +1,15 @@
+# v1.1.4 (2026-09-03)
+
+## Fixes
+- **Providers**: extracting models presented the built-in catalogue as though it
+  had just been read from the provider. When a provider's live model list does
+  not answer, extraction falls back to the built-in list, which is reasonable,
+  but the response dropped the flag saying so, so every model was labelled as
+  live and no warning was shown. That is why extracted names did not match the
+  provider. Measured against the providers that need no credential, 27 of 28
+  were being served from the built-in list this way. The panel now says when
+  the list is the built-in one, and why the live one was not used.
+
 # v1.1.3 (2026-09-03)
 
 ## Features

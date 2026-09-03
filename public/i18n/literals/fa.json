@@ -3782,5 +3782,20 @@
   "Request transformation pipeline": "خط پردازش دگرگون‌سازی درخواست",
   "Release notes": "یادداشت‌های انتشار",
   "Could not load the changelog for this build.": "یادداشت‌های این نسخه بارگذاری نشد.",
-  "No release notes shipped with this build.": "برای این نسخه یادداشت انتشاری همراه نشده است."
+  "No release notes shipped with this build.": "برای این نسخه یادداشت انتشاری همراه نشده است.",
+  "Showing the built-in model list": "نمایش فهرست مدل‌های داخلی",
+  "The provider's live model list was unavailable, so the built-in list is shown.": "فهرست زندهٔ مدل‌های این ارائه‌دهنده در دسترس نبود، بنابراین فهرست داخلی نشان داده می‌شود.",
+  "Update NovaRoute to": "به‌روزرسانی ⁦NovaRoute⁩ به",
+  "The panel installs it and restarts the service. Nothing to run yourself.": "پنل خودش آن را نصب می‌کند و سرویس را دوباره اجرا می‌کند. لازم نیست چیزی را خودتان اجرا کنید.",
+  "Updating NovaRoute": "در حال به‌روزرسانی ⁦NovaRoute⁩",
+  "Starting": "در حال شروع",
+  "Backing up": "در حال تهیهٔ نسخهٔ پشتیبان",
+  "Downloading the new version": "در حال دریافت نسخهٔ جدید",
+  "Building": "در حال ساخت",
+  "Cleaning up": "در حال پاک‌سازی",
+  "Restarting": "در حال اجرای دوباره",
+  "The service is restarting. This page will reconnect on its own.": "سرویس در حال اجرای دوباره است. این صفحه خودش دوباره وصل می‌شود.",
+  "You can leave this page. The update continues on the server.": "می‌توانید این صفحه را ببندید. به‌روزرسانی روی سرور ادامه پیدا می‌کند.",
+  "Try again": "تلاش دوباره",
+  "This provider does not serve chat models, so a chat test does not apply.": "این ارائه‌دهنده مدل گفت‌وگو ارائه نمی‌کند، بنابراین آزمون گفت‌وگو برایش معنا ندارد."
 }
