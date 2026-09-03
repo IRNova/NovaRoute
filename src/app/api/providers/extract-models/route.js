@@ -49,11 +49,15 @@ export async function POST(request) {
       ? (result.warning || "Using built-in catalog — live endpoint unavailable")
       : result.warning;
 
+    // `static` must survive to the client. Without it the dashboard marked
+    // every model "live", so the built-in catalogue was presented as though it
+    // had just been read from the provider: models that do not exist there,
+    // under names the provider does not use, with nothing saying so.
     return NextResponse.json({
       provider,
       models,
-      warning,
-      ...(result.warning ? { warning: result.warning } : {}),
+      static: Boolean(result.static),
+      warning: warning || null,
     });
   } catch (error) {
     console.log("Error extracting models:", error);

@@ -214,6 +214,16 @@ export default function ProviderEditModal({
         });
         if (res.ok) {
           const data = await res.json();
+          // Say so when this is the built-in catalogue rather than the
+          // provider's own list. Silently presenting one as the other is why
+          // extracted names did not match the provider.
+          if (data.static) {
+            setModelsError(
+              data.warning
+                ? `${translate("Showing the built-in model list")}: ${data.warning}`
+                : translate("The provider's live model list was unavailable, so the built-in list is shown.")
+            );
+          }
           for (const m of data.models || []) {
             const id = m.id || m.name;
             if (id) allModels.set(id, { id, name: m.name || id, contextWindow: m.contextWindow || null, source: data.static ? "default" : "live" });
