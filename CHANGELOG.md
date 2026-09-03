@@ -1,3 +1,26 @@
+# v1.1.3 (2026-09-03)
+
+## Features
+- **Update**: the panel now performs the update itself. Pressing Update starts
+  it on the server and shows the progress: backing up, downloading, installing,
+  building, restarting. It no longer offers a shell command to copy and a
+  shutdown to perform by hand. That flow existed because the in-panel updater
+  could not finish; it can now. A deployment that genuinely cannot update
+  itself, such as one without systemd, still gets the manual instructions,
+  because there they are the truth.
+
+## Fixes
+- **Providers**: testing models reported working models as inactive. A reply was
+  only recognised in three shapes, and Anthropic returns its text as an array
+  of blocks rather than a string, so every Anthropic-format provider looked
+  dead. Google's and the OpenAI Responses format were missed the same way. All
+  the formats the gateway actually speaks are now recognised.
+- **Providers**: testing models on a provider that does not serve chat, such as
+  a speech, image, search or embedding provider, marked all of its models
+  inactive. A chat test does not apply to those, and they are now reported as
+  untested rather than broken, and are never auto-disabled on the strength of
+  a test that could not run.
+
 # v1.1.2 (2026-09-01)
 
 ## Fixes

@@ -272,8 +272,13 @@ export default function ProviderEditModal({
         return;
       }
       const result = (data.results || [])[0];
-      const ok = !!result?.ok;
-      setModelStatuses((prev) => ({ ...prev, [modelId]: ok ? "active" : "inactive" }));
+      // ok === null means the test does not apply to this provider (it serves
+      // speech, images, search or embeddings, not chat). That is not a failure.
+      const ok = result?.ok;
+      setModelStatuses((prev) => ({
+        ...prev,
+        [modelId]: ok === true ? "active" : ok === null || result?.skipped ? "untested" : "inactive",
+      }));
       if (!ok) {
         setModels((prev) => prev.filter((m) => m.id !== modelId));
         await fetch("/api/models/disabled", {
@@ -306,10 +311,16 @@ export default function ProviderEditModal({
       }
       const newStatuses = {};
       for (const r of data.results || []) {
-        newStatuses[r.modelId] = r.ok ? "active" : "inactive";
+        newStatuses[r.modelId] =
+          r.ok === true ? "active" : r.ok === null || r.skipped ? "untested" : "inactive";
       }
       setModelStatuses((prev) => ({ ...prev, ...newStatuses }));
-      const failedIds = (data.results || []).filter((r) => !r.ok).map((r) => r.modelId).filter(Boolean);
+      // Only genuine failures are auto-hidden. A model that could not be
+      // tested must not be disabled on the strength of a test that never ran.
+      const failedIds = (data.results || [])
+        .filter((r) => r.ok === false && !r.skipped)
+        .map((r) => r.modelId)
+        .filter(Boolean);
       if (failedIds.length > 0) {
         setModels((prev) => prev.filter((m) => !failedIds.includes(m.id)));
         await fetch("/api/models/disabled", {
