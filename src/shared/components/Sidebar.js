@@ -10,6 +10,7 @@ import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useSidebarSearchStore } from "@/store/sidebarSearchStore";
 import Button from "./Button";
 import { ConfirmModal } from "./Modal";
+import UpdateProgressPanel from "./UpdateProgressPanel";
 import { translate } from "@/i18n/runtime";
 
 // Primary actions — always at the top of the navigation.
@@ -130,6 +131,9 @@ export default function Sidebar({ onClose }) {
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [shutdownCountdown, setShutdownCountdown] = useState(0);
+  const [updateStatus, setUpdateStatus] = useState(null);
+  const [updateError, setUpdateError] = useState("");
+  const [canSelfUpdate, setCanSelfUpdate] = useState(true);
   const [enableTranslator, setEnableTranslator] = useState(false);
   const { query } = useSidebarSearchStore();
   const { copied, copy } = useCopyToClipboard(2000);
@@ -155,8 +159,13 @@ export default function Sidebar({ onClose }) {
     fetch("/api/setup/check-update")
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
+        if (data && typeof data.canSelfUpdate === "boolean") setCanSelfUpdate(data.canSelfUpdate);
         if (data?.updateAvailable) {
-          setUpdateInfo((prev) => prev || { hasUpdate: true, latestVersion: data.commitSha, channel: "branch" });
+          setUpdateInfo((prev) => prev || {
+            hasUpdate: true,
+            latestVersion: data.latestVersion || data.commitSha,
+            channel: data.latestVersion ? "release" : "branch",
+          });
         }
       })
       .catch(() => {});
@@ -196,10 +205,54 @@ export default function Sidebar({ onClose }) {
     } catch { /* ignore */ }
   };
 
-  // Open manual update panel (no countdown yet — user must click Copy to trigger shutdown)
-  const handleUpdate = () => {
+  // Run the update on the server. No command to copy, no shutdown to perform:
+  // the panel starts it and follows it. The manual path is kept only for a
+  // deployment that genuinely cannot update itself (no systemd), where telling
+  // the operator to do it by hand is the honest answer rather than the default.
+  const pollUpdate = useCallback(async () => {
+    try {
+      const res = await fetch("/api/setup/update", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.idle) return;
+      setUpdateStatus(data);
+      if (data.done) {
+        setIsUpdating(false);
+        if (data.error) setUpdateError(data.error);
+      }
+    } catch {
+      // The service restarting mid-poll is expected.
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isUpdating) return undefined;
+    const t = setInterval(pollUpdate, 2500);
+    return () => clearInterval(t);
+  }, [isUpdating, pollUpdate]);
+
+  const handleUpdate = async () => {
     setShowUpdateModal(false);
+    setUpdateError("");
+    setUpdateStatus({ step: "starting", pct: 1 });
     setIsUpdating(true);
+    try {
+      const res = await fetch("/api/setup/update", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.error) {
+        setUpdateError(data.error || `Could not start the update (HTTP ${res.status})`);
+        setIsUpdating(false);
+      }
+    } catch (err) {
+      setUpdateError(err.message);
+      setIsUpdating(false);
+    }
+  };
+
+  const closeUpdate = () => {
+    setIsUpdating(false);
+    setUpdateStatus(null);
+    setUpdateError("");
   };
 
   // Triggered by Copy button inside ManualUpdatePanel: copy + countdown + shutdown
@@ -381,25 +434,37 @@ export default function Sidebar({ onClose }) {
         onClose={() => setShowUpdateModal(false)}
         onConfirm={handleUpdate}
         title={translate("Update NovaRoute")}
-        message={`Show install command for ${updateInfo?.channel === "branch" ? "" : "v"}${updateInfo?.latestVersion || ""}? You can copy it and shutdown to install manually.`}
-        confirmText={translate("Show Command")}
+        message={`${translate("Update NovaRoute to")} ${updateInfo?.channel === "branch" ? "" : "v"}${updateInfo?.latestVersion || ""}? ${translate("The panel installs it and restarts the service. Nothing to run yourself.")}`}
+        confirmText={translate("Update now")}
         cancelText={translate("Cancel")}
         variant="primary"
       />
 
       {/* Disconnected / Updating Overlay */}
-      {(isDisconnected || isUpdating) && (
+      {(isDisconnected || isUpdating || updateStatus || updateError) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-6">
-          {isUpdating ? (
-            <ManualUpdatePanel
-              latestVersion={updateInfo?.latestVersion}
-              installCmd={INSTALL_CMD}
-              copied={copied}
-              onCopyAndShutdown={handleCopyAndShutdown}
-              onCancel={handleCancelUpdate}
-              countdown={shutdownCountdown}
-              isDisconnected={isDisconnected}
-            />
+          {isUpdating || updateStatus || updateError ? (
+            // A deployment that genuinely cannot update itself still gets the
+            // command, because there telling the operator is the truth. Every
+            // other install now updates from here.
+            !canSelfUpdate ? (
+              <ManualUpdatePanel
+                latestVersion={updateInfo?.latestVersion}
+                installCmd={INSTALL_CMD}
+                copied={copied}
+                onCopyAndShutdown={handleCopyAndShutdown}
+                onCancel={handleCancelUpdate}
+                countdown={shutdownCountdown}
+                isDisconnected={isDisconnected}
+              />
+            ) : (
+              <UpdateProgressPanel
+                status={updateStatus}
+                error={updateError}
+                onClose={closeUpdate}
+                onRetry={handleUpdate}
+              />
+            )
           ) : (
             <div className="text-center p-8">
               <div className="flex items-center justify-center size-16 rounded-full bg-danger/20 text-danger mx-auto mb-4">
