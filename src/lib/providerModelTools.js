@@ -1,4 +1,5 @@
 import { PROVIDERS } from "open-sse/config/providers.js";
+import REGISTRY from "open-sse/providers/registry/index.js";
 import { getProviderModels, PROVIDER_ID_TO_ALIAS } from "open-sse/config/providerModels.js";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { CLAUDE_CLI_SPOOF_HEADERS, ANTHROPIC_API_VERSION } from "open-sse/providers/shared.js";
@@ -191,25 +192,66 @@ export async function fetchProviderModels({ provider, apiKey, providerSpecificDa
   return staticFallback("Live models endpoint unavailable — using the built-in catalog");
 }
 
+/** First readable text out of any of the supported response shapes. */
+/**
+ * Did the provider actually answer with a completion?
+ *
+ * Kept separate from the fetch so every wire format can be checked without a
+ * network call. The old inline check accepted three shapes and rejected the
+ * rest, so working models on Anthropic-format providers were reported dead.
+ */
+export function looksLikeCompletion(parsed) {
+  if (!parsed || typeof parsed !== "object") return false;
+  if (Array.isArray(parsed.choices) && parsed.choices.length > 0) return true;
+  if (typeof parsed.content === "string" && parsed.content.length > 0) return true;
+  if (Array.isArray(parsed.content) && parsed.content.length > 0) return true;
+  if (parsed.message?.content) return true;
+  if (Array.isArray(parsed.candidates) && parsed.candidates.length > 0) return true;
+  if (Array.isArray(parsed.output) && parsed.output.length > 0) return true;
+  if (typeof parsed.output_text === "string" && parsed.output_text.length > 0) return true;
+  if (typeof parsed.response === "string" && parsed.response.length > 0) return true;
+  return false;
+}
+
+export function extractPreview(parsed) {
+  const choice = parsed?.choices?.[0];
+  if (typeof choice?.message?.content === "string") return choice.message.content;
+  if (typeof choice?.text === "string") return choice.text;
+  if (typeof parsed?.message?.content === "string") return parsed.message.content;
+  if (typeof parsed?.content === "string") return parsed.content;
+  if (Array.isArray(parsed?.content)) {
+    const block = parsed.content.find((b) => typeof b?.text === "string");
+    if (block) return block.text;
+  }
+  if (typeof parsed?.output_text === "string") return parsed.output_text;
+  if (Array.isArray(parsed?.output)) {
+    for (const item of parsed.output) {
+      const block = item?.content?.find?.((c) => typeof c?.text === "string");
+      if (block) return block.text;
+    }
+  }
+  const cand = parsed?.candidates?.[0]?.content?.parts?.find?.((p) => typeof p?.text === "string");
+  if (cand) return cand.text;
+  if (typeof parsed?.response === "string") return parsed.response;
+  return null;
+}
+
 async function parseChatResponse(res, t0) {
   const latencyMs = Date.now() - t0;
   const raw = await res.text().catch(() => "");
   let parsed = null;
   try { parsed = raw ? JSON.parse(raw) : null; } catch {}
   if (res.ok) {
-    const hasChoices = Array.isArray(parsed?.choices) && parsed.choices.length > 0;
-    const hasContent = typeof parsed?.content === "string" && parsed.content.length > 0;
-    const hasMessage = parsed?.message?.content;
-    if (hasChoices || hasContent || hasMessage) {
+    // Every wire format a provider might answer in. This used to accept only
+    // `choices[]`, a string `content`, or `message.content`, which meant a
+    // genuine Anthropic reply was read as a failure: Anthropic returns
+    // `content` as an ARRAY of blocks, never a string. Gemini's `candidates`
+    // and the OpenAI Responses API's `output` were missed for the same reason,
+    // so working models were reported dead.
+    if (looksLikeCompletion(parsed)) {
       // Capture a short reply preview so deep-tests can prove a REAL completion
       // came back (not just a 200 status).
-      const choiceContent = parsed?.choices?.[0]?.message?.content;
-      const previewSource =
-        typeof choiceContent === "string"
-          ? choiceContent
-          : typeof parsed?.message?.content === "string"
-            ? parsed.message.content
-            : parsed?.content;
+      const previewSource = extractPreview(parsed);
       return {
         ok: true,
         latencyMs,
@@ -230,10 +272,59 @@ async function parseChatResponse(res, t0) {
  * (possibly unsaved) API key. Supports openai / claude / ollama formats.
  * Returns { ok, latencyMs, status, error }.
  */
+const REGISTRY_BY_ID = new Map(REGISTRY.map((r) => [r.id, r]));
+
+/**
+ * Endpoint config for a provider.
+ *
+ * open-sse/config/providers.js is a hand-maintained map that covers 320 of the
+ * 368 providers in the registry. The other 48 have no entry, so the model test
+ * answered "No base URL configured for this provider" for every one of their
+ * models and reported them all inactive. The registry declares the same
+ * transport, so it stands in when the legacy map has nothing.
+ */
+function endpointConfig(provider) {
+  const legacy = PROVIDERS[provider];
+  if (legacy?.baseUrl) return legacy;
+  const transport = REGISTRY_BY_ID.get(provider)?.transport;
+  if (!transport?.baseUrl) return legacy || {};
+  return {
+    ...(legacy || {}),
+    baseUrl: transport.baseUrl,
+    format: legacy?.format || (transport.format === "anthropic" ? "claude" : transport.format),
+    headers: legacy?.headers || transport.headers,
+  };
+}
+
+/**
+ * Can this provider be asked a chat question at all?
+ *
+ * 43 of the providers with no chat endpoint are text-to-speech, image, search,
+ * speech-to-text or embedding services. Sending them a chat completion is
+ * meaningless, and reporting the result as "inactive" told the operator their
+ * working TTS provider was broken.
+ */
+export function supportsChat(provider) {
+  const kinds = REGISTRY_BY_ID.get(provider)?.serviceKinds;
+  if (!Array.isArray(kinds) || kinds.length === 0) return true; // plain LLM provider
+  return kinds.includes("llm");
+}
+
 export async function pingProviderModel({ provider, apiKey, providerSpecificData = {}, model }) {
   const t0 = Date.now();
   const fail = (status, error) => ({ ok: false, latencyMs: Date.now() - t0, status, error: String(error).slice(0, 300) });
-  const cfg = PROVIDERS[provider] || {};
+  // Three outcomes, not two. ok:null means "this cannot be chat-tested", which
+  // is not the same as "this is broken".
+  if (!supportsChat(provider)) {
+    return {
+      ok: null,
+      skipped: true,
+      latencyMs: 0,
+      status: 0,
+      error: "This provider does not serve chat models, so a chat test does not apply.",
+    };
+  }
+  const cfg = endpointConfig(provider);
 
   const chatBody = JSON.stringify({
     model,
